@@ -37,7 +37,6 @@
       "networkRequestQuota": 10
     },
     "requiredModules": [
-      "network",
       "Shell"
     ],
     "bootstrap": {
