@@ -56,10 +56,7 @@
         "trustProfile": "proof.liskov.attested-runtime.v1"
       },
       "processorSelection": {
-        "mode": "static",
-        "processorIds": [
-          "5EgXTpg2p9cDD2LVJdkMWtcuuDWWTbz3QVcMhzX8V28CZkb6"
-        ],
+        "mode": "manager",
         "managerId": "9470",
         "requireScheduleClear": true,
         "requireConsumerAccess": true,
