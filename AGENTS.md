@@ -38,7 +38,8 @@ scripts/verify-reproducible.sh v4-control
 scripts/verify-reproducible.sh debian-trixie
 ```
 
-The GitHub ARM64 job additionally runs `scripts/smoke-rootfs.sh` under PRoot,
-checks the embedded helper's AArch64/static identity, and exercises abstract
-bridge-socket access. Live Acurast canaries are explicit, bounded release
-gates; they are not ordinary tests.
+The GitHub ARM64 job additionally runs `scripts/verify-native-aarch64.sh` and
+executes the embedded helper on the native architecture. A separate x86_64 job
+boots the exact artifact through QEMU/PRoot with `scripts/smoke-rootfs.sh` and
+exercises abstract bridge-socket access. Live Acurast canaries are explicit,
+bounded release gates; they are not ordinary tests.

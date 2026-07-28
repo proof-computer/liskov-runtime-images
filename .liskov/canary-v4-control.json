@@ -1,0 +1,108 @@
+{
+  "schema": "proof.liskov.application-manifest",
+  "schemaVersion": 4,
+  "applicationId": "liskov-runtime-images-v4-canary",
+  "metadata": {
+    "appType": "background-worker",
+    "description": "Bounded Acurast compatibility control for the Termux PRoot-Distro v4.30.1-derived Liskov rootfs.",
+    "labels": [
+      "liskov",
+      "runtime-image",
+      "canary",
+      "v4-control"
+    ]
+  },
+  "release": {
+    "mode": "build",
+    "artifact": {
+      "kind": "runtime_image"
+    },
+    "builder": {
+      "kind": "github",
+      "repository": "proof-computer/liskov-runtime-images",
+      "allowedRefs": [
+        "refs/heads/main"
+      ],
+      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-v4-control.yml@refs/heads/main",
+      "manifestPath": ".liskov/canary-v4-control.json"
+    }
+  },
+  "runtime": {
+    "command": "/usr/local/bin/liskov-runtime-contact -- /bin/sh -c 'echo liskov-runtime-images-v4-control-handoff; exec sleep 420'",
+    "role": "runtime-image-canary",
+    "resources": {
+      "memoryMiB": 128,
+      "storageMiB": 256,
+      "networkRequestQuota": 20
+    },
+    "requiredModules": [
+      "network",
+      "Shell"
+    ],
+    "bootstrap": {
+      "trustProfile": "proof.liskov.attested-runtime.v1",
+      "signedDiagnosticsRequired": true,
+      "identityBoundSecretsRequired": true
+    }
+  },
+  "deployment": {
+    "parallelism": 1,
+    "schedule": {
+      "durationMs": 900000,
+      "startDelayMs": 60000,
+      "maxStartDelayMs": 120000
+    },
+    "placement": {
+      "requirements": {
+        "trustProfile": "proof.liskov.attested-runtime.v1"
+      },
+      "processorSelection": {
+        "mode": "static",
+        "processorIds": [
+          "5GAuY4QM3z4MmsVZT8TiSNNXK8j3Cu49hv1HHHjBdvo4gQ9W"
+        ],
+        "managerId": "9470",
+        "requireScheduleClear": true,
+        "requireConsumerAccess": true,
+        "candidateLimit": 16
+      }
+    },
+    "lifecycle": {
+      "renewal": {
+        "mode": "before_scheduled_end",
+        "leadTime": {
+          "mode": "fixed",
+          "durationMs": 60000
+        }
+      },
+      "update": {
+        "timing": "immediate",
+        "existingJobs": {
+          "mode": "run_until_scheduled_end"
+        }
+      },
+      "recovery": {
+        "launch": {
+          "maxRetries": 0
+        },
+        "runtimeFailure": {
+          "mode": "wait_until_scheduled_end"
+        }
+      }
+    },
+    "spend": {
+      "maxRewardPlanckPerJob": "40000000000",
+      "maxNativeFeePlanckPerJob": "10000000000"
+    }
+  },
+  "ingress": {},
+  "observability": {
+    "logs": {
+      "enabled": false
+    },
+    "runtimeDiagnostics": {
+      "signed": true
+    }
+  },
+  "configuration": {}
+}

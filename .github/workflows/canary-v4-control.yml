@@ -1,0 +1,17 @@
+name: Canary v4 control image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  upload:
+    uses: proof-computer/liskov-github-actions/.github/workflows/runtime-image.yml@v1
+    with:
+      application-id: liskov-runtime-images-v4-canary
+      manifest-path: .liskov/canary-v4-control.json
+      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.1/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
+      expected-sha256: 4eb4d423acf213ee64991ca94033037c927796d6652a205bfeb9aee2336392e7

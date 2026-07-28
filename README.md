@@ -113,12 +113,13 @@ make test
 GitHub CI builds every image twice on a public native ARM64 runner. It then:
 
 - compares every output byte-for-byte;
+- executes the embedded static helper directly on the native ARM64 host;
 - compares the locked OCI layer materialization with the exact PRoot-Distro
   v5.5.0 extractor at commit `0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26`;
 - checks the single root directory and canonical metadata;
 - verifies the embedded helper SHA-256, AArch64 ELF machine, static linkage,
   and lack of a dynamic interpreter;
-- boots the image under PRoot;
+- boots the exact uploaded artifact under QEMU/PRoot in a separate job;
 - resolves the production Liskov hostname;
 - proves abstract Unix bridge-socket access and fail-closed exit status;
 - exercises HTTPS from the maintained Debian image in the disposable smoke
@@ -138,7 +139,7 @@ requires:
 1. updating `sources.lock.json`;
 2. reviewing the source and overlay diff;
 3. reproducing both builds;
-4. passing native PRoot CI;
+4. passing native ARM64 and QEMU/PRoot CI;
 5. publishing a release candidate;
 6. running a new bounded Acurast canary before promotion.
 

@@ -46,12 +46,12 @@ jobs:
           path: .compat/proot-distro
           persist-credentials: false
 
-      - name: Install native PRoot smoke dependencies
+      - name: Install native verification dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
-            binutils file proot xz-utils
+            binutils file xz-utils
 
       - name: Build twice from the locked materials
         env:
@@ -62,14 +62,13 @@ jobs:
           python3 scripts/build-image.py "${TARGET}" --output-dir out/b
           diff -qr out/a out/b
 
-      - name: Inspect and smoke under native AArch64 PRoot
+      - name: Inspect and execute the helper on native AArch64
         env:
           TARGET: ${{ matrix.target }}
-          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
         run: |
           set -euo pipefail
           archive=$(find out/a -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
-          scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
+          scripts/verify-native-aarch64.sh "${TARGET}" "${archive}"
 
       - name: Compare OCI materialization with PRoot-Distro v5.5.0
         if: matrix.target == 'debian-trixie'
@@ -91,3 +90,34 @@ jobs:
           path: out/a/*
           if-no-files-found: error
           retention-days: 14
+
+  proot:
+    needs: image
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [v4-control, debian-trixie]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Install QEMU/PRoot smoke dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            binutils file proot qemu-user-static xz-utils
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: liskov-runtime-images-${{ matrix.target }}
+          path: smoke
+
+      - name: Boot and smoke under QEMU/PRoot
+        env:
+          TARGET: ${{ matrix.target }}
+          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          archive=$(find smoke -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
+          scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
