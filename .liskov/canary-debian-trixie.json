@@ -34,7 +34,7 @@
     "resources": {
       "memoryMiB": 128,
       "storageMiB": 256,
-      "networkRequestQuota": 20
+      "networkRequestQuota": 10
     },
     "requiredModules": [
       "network",
@@ -60,7 +60,7 @@
       "processorSelection": {
         "mode": "static",
         "processorIds": [
-          "5GAuY4QM3z4MmsVZT8TiSNNXK8j3Cu49hv1HHHjBdvo4gQ9W"
+          "5EgXTpg2p9cDD2LVJdkMWtcuuDWWTbz3QVcMhzX8V28CZkb6"
         ],
         "managerId": "9470",
         "requireScheduleClear": true,
