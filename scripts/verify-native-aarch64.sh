@@ -52,7 +52,7 @@ if readelf -l "${helper}" | grep -q 'interpreter'; then
 fi
 
 version=$("${helper}" --version)
-if [[ "${version}" != "liskov-runtime-contact 0.1.0" ]]; then
+if [[ "${version}" != "liskov-runtime-contact 0.1.1" ]]; then
   echo "unexpected embedded helper version: ${version}" >&2
   exit 1
 fi

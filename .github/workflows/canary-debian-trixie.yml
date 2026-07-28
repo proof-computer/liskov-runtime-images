@@ -13,5 +13,5 @@ jobs:
     with:
       application-id: liskov-runtime-images-v5-canary
       manifest-path: .liskov/canary-debian-trixie.json
-      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.1/liskov-runtime-image-debian-trixie-aarch64.tar.xz
-      expected-sha256: 976a99022d24a3940d5175281141869703b6f503c2e3e194f107bd4a3e1ffa6d
+      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.2/liskov-runtime-image-debian-trixie-aarch64.tar.xz
+      expected-sha256: 2343bc1c4f4cb2f381ccf06998a00f519bcda4d6d9134d1061b8bfadd64c1177

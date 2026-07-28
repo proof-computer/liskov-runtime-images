@@ -28,7 +28,7 @@
     }
   },
   "runtime": {
-    "command": "/usr/local/bin/liskov-runtime-contact -- /bin/sh -c 'echo liskov-runtime-images-v4-control-handoff; exec sleep 420'",
+    "command": "/usr/local/bin/liskov-runtime-contact --diagnostic-exit-codes -- /bin/sh -c 'echo liskov-runtime-images-v4-control-handoff; exec sleep 420'",
     "role": "runtime-image-canary",
     "resources": {
       "memoryMiB": 128,
