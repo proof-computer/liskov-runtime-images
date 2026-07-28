@@ -1,0 +1,5 @@
+/out/
+/.cache/
+/.compat/
+__pycache__/
+*.pyc

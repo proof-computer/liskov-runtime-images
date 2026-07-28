@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [v4-control, debian-trixie]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Check out exact PRoot-Distro compatibility reference
+        if: matrix.target == 'debian-trixie'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: termux/proot-distro
+          ref: 0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26
+          path: .compat/proot-distro
+          persist-credentials: false
+
+      - name: Install native PRoot smoke dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            binutils file proot xz-utils
+
+      - name: Reproduce and smoke release image
+        env:
+          TARGET: ${{ matrix.target }}
+          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build-image.py "${TARGET}" --output-dir out/a
+          python3 scripts/build-image.py "${TARGET}" --output-dir out/b
+          diff -qr out/a out/b
+          archive=$(find out/a -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
+          scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
+
+      - name: Compare OCI materialization with PRoot-Distro v5.5.0
+        if: matrix.target == 'debian-trixie'
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-proot-distro-v5.py \
+            --proot-distro-source .compat/proot-distro
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.target }}
+          path: out/a/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+
+      - name: Create release checksums
+        run: |
+          set -euo pipefail
+          (
+            cd release
+            sha256sum liskov-runtime-image-* > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: release/*
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "Digest-pinned AArch64 rootfs images for Liskov-managed Acurast Cargo/PRoot workloads."
+            echo
+            echo "- \`debian-trixie\` is the maintained OCI-derived image."
+            echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
+            echo "- Every image embeds the exact Apache-2.0 \`liskov-runtime-contact\` v0.1.0 binary and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, checksums, and GitHub attestation."
+            echo
+            echo "Verify \`SHA256SUMS\` and the GitHub artifact attestation before use."
+          } > "${notes_file}"
+
+          release_args=(
+            release create "${TAG}"
+            --repo "${GITHUB_REPOSITORY}"
+            --title "${TAG}"
+            --notes-file "${notes_file}"
+          )
+          if [[ "${TAG}" == *-rc.* ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh "${release_args[@]}" release/*

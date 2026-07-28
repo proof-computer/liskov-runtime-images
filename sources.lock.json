@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "sourceDateEpoch": 1783900800,
+  "prootDistroCompatibility": {
+    "version": "5.5.0",
+    "commit": "0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26",
+    "repository": "https://github.com/termux/proot-distro",
+    "role": "compatibility-reference"
+  },
+  "helper": {
+    "version": "0.1.0",
+    "releaseCommit": "d77ba9d8f1664423022c51711fdef488aa7936f6",
+    "archiveUrl": "https://github.com/proof-computer/liskov-runtime-cargo/releases/download/v0.1.0/liskov-runtime-contact-v0.1.0-aarch64-unknown-linux-musl.tar.gz",
+    "archiveSha256": "964e3cece3bb9988fe4485b4669f86be43cc6088bf9721ffc9a9fa9d4c04be0b",
+    "binarySha256": "5c4f679edced13e5463913121b36604f39d26be488dc8dd33240244315ed9971",
+    "binaryPath": "liskov-runtime-contact-v0.1.0-aarch64-unknown-linux-musl/liskov-runtime-contact",
+    "licensePath": "liskov-runtime-contact-v0.1.0-aarch64-unknown-linux-musl/LICENSE"
+  },
+  "images": {
+    "v4-control": {
+      "kind": "termux-rootfs",
+      "distribution": "ubuntu",
+      "release": "questing",
+      "architecture": "arm64",
+      "sourceUrl": "https://github.com/termux/proot-distro/releases/download/v4.30.1/ubuntu-questing-aarch64-pd-v4.30.1.tar.xz",
+      "sourceSha256": "5ab35b90cd9a9f180656261ba400a135c4c01c2da4b74522118342f985c2d328",
+      "sourceRoot": "ubuntu-questing-aarch64",
+      "archiveRoot": "liskov-v4-control-ubuntu-questing-aarch64",
+      "outputStem": "liskov-runtime-image-v4-control-ubuntu-questing-aarch64",
+      "supportStatus": "compatibility-control"
+    },
+    "debian-trixie": {
+      "kind": "oci",
+      "distribution": "debian",
+      "release": "trixie-slim",
+      "architecture": "arm64",
+      "variant": "v8",
+      "registry": "https://registry-1.docker.io",
+      "authUrl": "https://auth.docker.io/token",
+      "repository": "library/debian",
+      "sourceReference": "docker.io/library/debian:trixie-slim",
+      "manifestDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
+      "configDigest": "sha256:f6e7693bfdb3acc8a5dee72d30fc01589a9d342278e143acffa35940940d2df1",
+      "layers": [
+        {
+          "digest": "sha256:59f54fbcd984beca03fd8b78569fa57268ecf78d291c0b6fe1623c2467f5a075",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 30143705
+        }
+      ],
+      "archiveRoot": "liskov-debian-trixie-aarch64",
+      "outputStem": "liskov-runtime-image-debian-trixie-aarch64",
+      "supportStatus": "release-candidate"
+    }
+  }
+}

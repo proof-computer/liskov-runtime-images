@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Offline tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q scripts tests
+
+  image:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [v4-control, debian-trixie]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Check out exact PRoot-Distro compatibility reference
+        if: matrix.target == 'debian-trixie'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: termux/proot-distro
+          ref: 0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26
+          path: .compat/proot-distro
+          persist-credentials: false
+
+      - name: Install native PRoot smoke dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            binutils file proot xz-utils
+
+      - name: Build twice from the locked materials
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build-image.py "${TARGET}" --output-dir out/a
+          python3 scripts/build-image.py "${TARGET}" --output-dir out/b
+          diff -qr out/a out/b
+
+      - name: Inspect and smoke under native AArch64 PRoot
+        env:
+          TARGET: ${{ matrix.target }}
+          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          archive=$(find out/a -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
+          scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
+
+      - name: Compare OCI materialization with PRoot-Distro v5.5.0
+        if: matrix.target == 'debian-trixie'
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-proot-distro-v5.py \
+            --proot-distro-source .compat/proot-distro
+
+      - name: Attest exact outputs
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: out/a/*
+
+      - name: Upload exact outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: liskov-runtime-images-${{ matrix.target }}
+          path: out/a/*
+          if-no-files-found: error
+          retention-days: 14
