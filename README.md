@@ -122,8 +122,8 @@ GitHub CI builds every image twice on a public native ARM64 runner. It then:
 - boots the exact uploaded artifact under QEMU/PRoot in a separate job;
 - resolves the production Liskov hostname;
 - proves abstract Unix bridge-socket access and fail-closed exit status;
-- exercises HTTPS from the maintained Debian image in the disposable smoke
-  rootfs;
+- exercises the static helper's bundled-root HTTPS path from the Debian image
+  without installing a rootfs CA bundle or client;
 - publishes checksums, metadata, and GitHub build attestations.
 
 Successful local and CI smoke tests are necessary but not sufficient for

@@ -119,21 +119,50 @@ fi
 grep -qx 'deployment_id' "${method_file}"
 
 if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
-  proot "${qemu_args[@]}" -0 \
+  https_socket_name="${socket_name}-https"
+  https_ready_file="${smoke_root}/bridge-https.ready"
+  https_method_file="${smoke_root}/bridge-https.method"
+  python3 "${repository_root}/tests/bridge-smoke-server.py" \
+    --socket-name "${https_socket_name}" \
+    --ready-file "${https_ready_file}" \
+    --method-file "${https_method_file}" \
+    --valid-identity &
+  bridge_pid=$!
+
+  for _ in {1..100}; do
+    [[ -f "${https_ready_file}" ]] && break
+    sleep 0.05
+  done
+  [[ -f "${https_ready_file}" ]] || {
+    echo "HTTPS bridge smoke server did not become ready" >&2
+    exit 1
+  }
+
+  set +e
+  BRIDGE_SOCKET="${https_socket_name}" proot "${qemu_args[@]}" -0 \
     -r "${rootfs}" \
     -b /dev \
     -b /proc \
     -b /sys \
     -b /etc/resolv.conf \
     -w / \
-    /bin/sh -c '
-      set -eu
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install --no-install-recommends --yes ca-certificates curl
-      curl --fail --location --silent --show-error \
-        --output /dev/null https://liskov.proof.computer/
-    '
+    /usr/local/bin/liskov-runtime-contact \
+      --core-url https://example.com \
+      -- /bin/true
+  https_status=$?
+  set -e
+
+  wait "${bridge_pid}"
+  bridge_pid=
+  if [[ "${https_status}" -ne 70 ]]; then
+    echo "HTTPS smoke expected permanent HTTP rejection status 70, got ${https_status}" >&2
+    exit 1
+  fi
+  expected_methods=$'deployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
+  if [[ "$(cat "${https_method_file}")" != "${expected_methods}" ]]; then
+    echo "HTTPS smoke did not complete identity discovery and signing" >&2
+    exit 1
+  fi
 fi
 
 echo "smoke passed: ${target}"
