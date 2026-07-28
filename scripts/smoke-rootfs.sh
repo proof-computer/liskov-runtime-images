@@ -45,12 +45,15 @@ cleanup() {
 trap cleanup EXIT
 
 python3 "${repository_root}/scripts/inspect-artifact.py" "${archive}" --target "${target}"
-tar -xJf "${archive}" -C "${smoke_root}"
 root_name=$(python3 -c '
 import json, pathlib, sys
 lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
 print(lock["images"][sys.argv[2]]["archiveRoot"])
 ' "${repository_root}/sources.lock.json" "${target}")
+# The v4 source deliberately preserves its device nodes. Unprivileged CI
+# cannot recreate them, and PRoot replaces this directory with the bound host
+# /dev for the smoke, so skip only those archive members during extraction.
+tar --exclude="${root_name}/dev/*" -xJf "${archive}" -C "${smoke_root}"
 rootfs="${smoke_root}/${root_name}"
 helper="${rootfs}/usr/local/bin/liskov-runtime-contact"
 

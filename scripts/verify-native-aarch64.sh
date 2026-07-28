@@ -34,12 +34,13 @@ cleanup() {
 trap cleanup EXIT
 
 python3 "${repository_root}/scripts/inspect-artifact.py" "${archive}" --target "${target}"
-tar -xJf "${archive}" -C "${verification_root}"
 root_name=$(python3 -c '
 import json, pathlib, sys
 lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
 print(lock["images"][sys.argv[2]]["archiveRoot"])
 ' "${repository_root}/sources.lock.json" "${target}")
+tar -xJf "${archive}" -C "${verification_root}" \
+  "${root_name}/usr/local/bin/liskov-runtime-contact"
 helper="${verification_root}/${root_name}/usr/local/bin/liskov-runtime-contact"
 
 file "${helper}" | grep -Eq 'ARM aarch64|ARM64'
