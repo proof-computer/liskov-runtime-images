@@ -148,26 +148,26 @@ class CanaryContractTests(unittest.TestCase):
                 manifest["runtime"]["command"],
             )
 
-    def test_canary_workflows_pin_the_verified_rc3_archives(self) -> None:
+    def test_canary_workflows_pin_the_verified_rc4_archives(self) -> None:
         expected = {
             "canary-v4-bridge-probe.yml": (
                 "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
-                "74e254fcfd0313913df7887336003dcb9d63bae32cc5a0b5a3f56dfaa8a8a4e9",
+                "3f53a87e0f8d92a28fe3dd4cb6c9074871032eceb3a6d50cdbcd2e8b80111b41",
             ),
             "canary-v4-control.yml": (
                 "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
-                "74e254fcfd0313913df7887336003dcb9d63bae32cc5a0b5a3f56dfaa8a8a4e9",
+                "3f53a87e0f8d92a28fe3dd4cb6c9074871032eceb3a6d50cdbcd2e8b80111b41",
             ),
             "canary-debian-trixie.yml": (
                 "liskov-runtime-image-debian-trixie-aarch64.tar.xz",
-                "af7e98ffdf03e56194359a97b8daa971dc5bc9bc8016652fafcb1fc2e648cbc8",
+                "77ce0c45e695c2e4f2c9a47f7c80f6bee84b7c0623ece5ed26fa4f8ec33fc044",
             ),
         }
         for workflow_name, (archive, digest) in expected.items():
             workflow = (
                 REPOSITORY_ROOT / ".github" / "workflows" / workflow_name
             ).read_text(encoding="utf-8")
-            self.assertIn(f"/v0.1.0-rc.3/{archive}", workflow)
+            self.assertIn(f"/v0.1.0-rc.4/{archive}", workflow)
             self.assertIn(f"expected-sha256: {digest}", workflow)
 
 
