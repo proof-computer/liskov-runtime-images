@@ -49,8 +49,8 @@
     "parallelism": 1,
     "schedule": {
       "durationMs": 900000,
-      "startDelayMs": 60000,
-      "maxStartDelayMs": 120000
+      "startDelayMs": 300000,
+      "maxStartDelayMs": 300000
     },
     "placement": {
       "requirements": {

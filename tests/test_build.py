@@ -114,6 +114,14 @@ class CanaryContractTests(unittest.TestCase):
         )
         for manifest in (probe, v4, debian):
             self.assertEqual(
+                manifest["deployment"]["schedule"],
+                {
+                    "durationMs": 900000,
+                    "startDelayMs": 300000,
+                    "maxStartDelayMs": 300000,
+                },
+            )
+            self.assertEqual(
                 manifest["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"],
                 0,
             )
