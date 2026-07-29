@@ -34,10 +34,10 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["supportStatus"],
             "release-candidate",
         )
-        self.assertEqual(lock["helper"]["version"], "0.2.1")
+        self.assertEqual(lock["helper"]["version"], "0.2.2")
         self.assertEqual(
             lock["helper"]["releaseCommit"],
-            "e3dab9e8cfbe55399df50e9e3c5423eedd0730ff",
+            "74155594171460f85a5f886807749d00bed734bb",
         )
         for digest in (
             lock["helper"]["archiveSha256"],
