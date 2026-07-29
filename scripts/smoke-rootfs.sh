@@ -56,6 +56,8 @@ print(lock["images"][sys.argv[2]]["archiveRoot"])
 tar --exclude="${root_name}/dev/*" -xJf "${archive}" -C "${smoke_root}"
 rootfs="${smoke_root}/${root_name}"
 helper="${rootfs}/usr/local/bin/liskov-runtime-contact"
+shim="${rootfs}/usr/local/lib/libgetifaddrs_override.so"
+shim_source="${rootfs}/usr/share/liskov-runtime-images/getifaddrs_override.c"
 
 file "${helper}" | grep -Eq 'ARM aarch64|ARM64'
 file "${helper}" | grep -q 'statically linked'
@@ -64,6 +66,13 @@ if readelf -l "${helper}" | grep -q 'interpreter'; then
   echo "embedded helper unexpectedly requests a dynamic interpreter" >&2
   exit 1
 fi
+test -r "${shim_source}"
+file "${shim}" | grep -Eq 'ARM aarch64|ARM64'
+file "${shim}" | grep -q 'shared object'
+readelf -h "${shim}" | grep -q 'Type:.*DYN'
+readelf -h "${shim}" | grep -q 'Machine:.*AArch64'
+readelf --wide --dyn-syms "${shim}" | grep -Eq 'GLOBAL +DEFAULT +[0-9]+ +getifaddrs$'
+readelf --wide --dyn-syms "${shim}" | grep -Eq 'GLOBAL +DEFAULT +[0-9]+ +freeifaddrs$'
 
 proot "${qemu_args[@]}" -0 \
   -r "${rootfs}" \
@@ -77,6 +86,7 @@ proot "${qemu_args[@]}" -0 \
     test "$(id -u)" = 0
     test -x /bin/sh
     /usr/local/bin/liskov-runtime-contact --version
+    LD_PRELOAD=/usr/local/lib/libgetifaddrs_override.so /bin/sh -c :
     getent hosts liskov.proof.computer >/dev/null
   '
 
@@ -161,6 +171,52 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
   expected_methods=$'deployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
   if [[ "$(cat "${https_method_file}")" != "${expected_methods}" ]]; then
     echo "HTTPS smoke did not complete identity discovery and signing" >&2
+    exit 1
+  fi
+
+  probe_socket_name="${socket_name}-probe"
+  probe_ready_file="${smoke_root}/bridge-probe.ready"
+  probe_method_file="${smoke_root}/bridge-probe.method"
+  python3 "${repository_root}/tests/bridge-smoke-server.py" \
+    --socket-name "${probe_socket_name}" \
+    --ready-file "${probe_ready_file}" \
+    --method-file "${probe_method_file}" \
+    --probe &
+  bridge_pid=$!
+
+  for _ in {1..100}; do
+    [[ -f "${probe_ready_file}" ]] && break
+    sleep 0.05
+  done
+  [[ -f "${probe_ready_file}" ]] || {
+    echo "bridge probe smoke server did not become ready" >&2
+    exit 1
+  }
+
+  set +e
+  BRIDGE_SOCKET="${probe_socket_name}" proot "${qemu_args[@]}" -0 \
+    -r "${rootfs}" \
+    -b /dev \
+    -b /proc \
+    -b /sys \
+    -b /etc/resolv.conf \
+    -w / \
+    /usr/local/bin/liskov-runtime-contact \
+      --bridge-probe \
+      --core-url https://example.com \
+      -- /bin/true
+  probe_status=$?
+  set -e
+
+  wait "${bridge_pid}"
+  bridge_pid=
+  if [[ "${probe_status}" -ne 70 ]]; then
+    echo "bridge probe smoke expected permanent HTTP rejection status 70, got ${probe_status}" >&2
+    exit 1
+  fi
+  expected_probe_methods=$'processor_version\nprocessor_version\ndeployment_id\ndeployment_ipfsHash\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign\ndeployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
+  if [[ "$(cat "${probe_method_file}")" != "${expected_probe_methods}" ]]; then
+    echo "bridge probe smoke did not cover the expected bounded methods" >&2
     exit 1
   fi
 fi

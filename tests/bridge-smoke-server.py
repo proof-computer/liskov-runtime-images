@@ -15,6 +15,7 @@ def main() -> int:
     parser.add_argument("--ready-file", required=True, type=Path)
     parser.add_argument("--method-file", required=True, type=Path)
     parser.add_argument("--valid-identity", action="store_true")
+    parser.add_argument("--probe", action="store_true")
     args = parser.parse_args()
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -24,7 +25,7 @@ def main() -> int:
     args.ready_file.write_text("ready\n", encoding="utf-8")
 
     methods: list[str] = []
-    request_count = 4 if args.valid_identity else 1
+    request_count = 11 if args.probe else (4 if args.valid_identity else 1)
     public_key = "ab" * 32
     for _ in range(request_count):
         connection, _ = server.accept()
@@ -42,10 +43,12 @@ def main() -> int:
             method = request.get("method", "")
             methods.append(method)
             results = {
+                "processor_version": {"version": "1.25.1"},
                 "deployment_id": {
                     "id": "7",
                     "origin": {"kind": "Acurast", "source": "smoke"},
                 },
+                "deployment_ipfsHash": {"ipfsHash": "bafy-smoke"},
                 "deployment_publicKeys": {
                     "publicKeys": {"ed25519": public_key}
                 },
@@ -56,10 +59,21 @@ def main() -> int:
                 },
                 "signer_sign": {"bytes": "11" * 64},
             }
+            if args.probe:
+                if len(methods) == 1 and request.get("id") != "1":
+                    raise RuntimeError("probe did not use the documented short request id")
+                if len(methods) == 2 and not str(request.get("id", "")).startswith(
+                    "liskov-runtime-contact-"
+                ):
+                    raise RuntimeError("probe did not compare the long request id")
             response = {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
-                "result": results.get(method) if args.valid_identity else None,
+                "result": (
+                    results.get(method)
+                    if args.valid_identity or args.probe
+                    else None
+                ),
             }
             connection.sendall(
                 (json.dumps(response, separators=(",", ":")) + "\n").encode()

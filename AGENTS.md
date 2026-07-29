@@ -10,7 +10,9 @@ images curated for Liskov-managed Acurast Cargo/PRoot workloads.
 - Build the maintained image from the exact single-platform OCI manifest
   digest, never from a mutable tag.
 - Overlay only the released `liskov-runtime-contact` binary, its Apache-2.0
-  license, and the generated Liskov provenance record.
+  license, the source and deterministically compiled AArch64 shared object for
+  the documented Acurast `getifaddrs` compatibility override, and the generated
+  Liskov provenance record.
 - Keep image construction independent of `liskov-rs`. The reusable
   `liskov-github-actions` workflow may consume release artifacts later.
 

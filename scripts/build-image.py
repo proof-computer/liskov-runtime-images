@@ -9,6 +9,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import platform
 import shutil
 import stat
 import subprocess
@@ -23,10 +24,20 @@ from typing import Any
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = REPOSITORY_ROOT / "sources.lock.json"
+GETIFADDRS_OVERRIDE_SOURCE = REPOSITORY_ROOT / "assets/getifaddrs_override.c"
+HELPER_PATH = "usr/local/bin/liskov-runtime-contact"
+HELPER_LICENSE_PATH = "usr/share/doc/liskov-runtime-contact/LICENSE"
+GETIFADDRS_OVERRIDE_LIBRARY_PATH = "usr/local/lib/libgetifaddrs_override.so"
+GETIFADDRS_OVERRIDE_SOURCE_PATH = (
+    "usr/share/liskov-runtime-images/getifaddrs_override.c"
+)
+PROVENANCE_PATH = "usr/share/liskov-runtime-images/provenance.json"
 OVERLAY_PATHS = (
-    "usr/local/bin/liskov-runtime-contact",
-    "usr/share/doc/liskov-runtime-contact/LICENSE",
-    "usr/share/liskov-runtime-images/provenance.json",
+    HELPER_PATH,
+    HELPER_LICENSE_PATH,
+    GETIFADDRS_OVERRIDE_LIBRARY_PATH,
+    GETIFADDRS_OVERRIDE_SOURCE_PATH,
+    PROVENANCE_PATH,
 )
 OCI_MANIFEST_MEDIA_TYPES = (
     "application/vnd.oci.image.manifest.v1+json",
@@ -64,6 +75,78 @@ def verify_digest(path: Path, expected: str, label: str) -> None:
     actual = sha256_file(path)
     if actual != expected:
         raise BuildError(f"{label} SHA-256 mismatch: expected {expected}, got {actual}")
+
+
+def verify_aarch64_shared_object(path: Path) -> None:
+    bytes_ = path.read_bytes()
+    if (
+        len(bytes_) < 64
+        or bytes_[:4] != b"\x7fELF"
+        or bytes_[4] != 2
+        or bytes_[5] != 1
+        or int.from_bytes(bytes_[16:18], "little") != 3
+        or int.from_bytes(bytes_[18:20], "little") != 183
+    ):
+        raise BuildError(
+            "getifaddrs override must be an ELF64 little-endian AArch64 shared object"
+        )
+
+
+def build_getifaddrs_override(destination: Path) -> None:
+    if not GETIFADDRS_OVERRIDE_SOURCE.is_file():
+        raise BuildError("getifaddrs override source is missing")
+    configured = os.environ.get("LISKOV_AARCH64_CC", "").strip()
+    compiler = configured or (
+        "cc" if platform.machine().lower() in {"aarch64", "arm64"} else "aarch64-linux-gnu-gcc"
+    )
+    if any(character.isspace() for character in compiler):
+        raise BuildError("LISKOV_AARCH64_CC must name one compiler executable")
+    if shutil.which(compiler) is None:
+        raise BuildError(
+            f"AArch64 C compiler is missing: {compiler}; set LISKOV_AARCH64_CC"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    compiler_source = destination.with_name("getifaddrs_override.c")
+    shutil.copyfile(GETIFADDRS_OVERRIDE_SOURCE, compiler_source)
+    command = [
+        compiler,
+        "-std=c11",
+        "-D_GNU_SOURCE",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-O2",
+        "-fPIC",
+        "-fno-ident",
+        "-shared",
+        "-Wl,--build-id=none",
+        "-Wl,--as-needed",
+        "-Wl,-z,relro,-z,now",
+        "-Wl,-s",
+        "-o",
+        str(destination),
+        str(compiler_source),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "LC_ALL": "C",
+                "SOURCE_DATE_EPOCH": "0",
+                "TZ": "UTC",
+            },
+        )
+    finally:
+        compiler_source.unlink(missing_ok=True)
+    if result.returncode != 0:
+        error = result.stderr.decode("utf-8", errors="replace")[-4096:]
+        raise BuildError(f"getifaddrs override compilation failed: {error}")
+    verify_aarch64_shared_object(destination)
+    os.chmod(destination, 0o755)
 
 
 def cache_path(cache_dir: Path, digest: str, suffix: str) -> Path:
@@ -544,6 +627,7 @@ def spdx_document(
     target: str,
     image: dict[str, Any],
     helper: dict[str, Any],
+    getifaddrs_override_sha256: str,
     root: Path,
     final_inventory_digest: str,
     created: str,
@@ -632,6 +716,33 @@ def spdx_document(
             "spdxElementId": image_spdx_id,
             "relationshipType": "CONTAINS",
             "relatedSpdxElement": helper_id,
+        }
+    )
+    shim_id = "SPDXRef-Package-Liskov-Getifaddrs-Override"
+    packages.append(
+        {
+            "SPDXID": shim_id,
+            "name": "liskov-getifaddrs-override",
+            "versionInfo": "1",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": False,
+            "checksums": [
+                {
+                    "algorithm": "SHA256",
+                    "checksumValue": getifaddrs_override_sha256,
+                }
+            ],
+            "licenseConcluded": "Apache-2.0",
+            "licenseDeclared": "Apache-2.0",
+            "copyrightText": "Copyright 2026 PROOF Computer",
+            "supplier": "Organization: PROOF Computer",
+        }
+    )
+    relationships.append(
+        {
+            "spdxElementId": image_spdx_id,
+            "relationshipType": "CONTAINS",
+            "relatedSpdxElement": shim_id,
         }
     )
     return {
@@ -901,10 +1012,18 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
             raise BuildError("helper release archive is missing its binary or license")
         verify_digest(helper_binary, helper["binarySha256"], "liskov-runtime-contact binary")
 
-        binary_destination = root / OVERLAY_PATHS[0]
-        license_destination = root / OVERLAY_PATHS[1]
-        provenance_destination = root / OVERLAY_PATHS[2]
-        for destination in (binary_destination, license_destination, provenance_destination):
+        binary_destination = root / HELPER_PATH
+        license_destination = root / HELPER_LICENSE_PATH
+        shim_library_destination = root / GETIFADDRS_OVERRIDE_LIBRARY_PATH
+        shim_source_destination = root / GETIFADDRS_OVERRIDE_SOURCE_PATH
+        provenance_destination = root / PROVENANCE_PATH
+        for destination in (
+            binary_destination,
+            license_destination,
+            shim_library_destination,
+            shim_source_destination,
+            provenance_destination,
+        ):
             if destination.exists() or destination.is_symlink():
                 raise BuildError(f"base image already contains overlay path {destination}")
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -912,6 +1031,11 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         os.chmod(binary_destination, 0o755)
         shutil.copyfile(helper_license, license_destination)
         os.chmod(license_destination, 0o644)
+        build_getifaddrs_override(shim_library_destination)
+        shutil.copyfile(GETIFADDRS_OVERRIDE_SOURCE, shim_source_destination)
+        os.chmod(shim_source_destination, 0o644)
+        shim_source_digest = sha256_file(shim_source_destination)
+        shim_library_digest = sha256_file(shim_library_destination)
 
         in_image_provenance = {
             "domain": "proof.liskov.runtime-image.provenance.v1",
@@ -927,6 +1051,18 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
                 "helperReleaseCommit": helper["releaseCommit"],
                 "helperArchiveSha256": helper["archiveSha256"],
                 "helperBinarySha256": helper["binarySha256"],
+                "networkInterfaceOverride": {
+                    "contract": "loopback-only-getifaddrs-v1",
+                    "sourcePath": GETIFADDRS_OVERRIDE_SOURCE_PATH,
+                    "sourceSha256": shim_source_digest,
+                    "libraryPath": GETIFADDRS_OVERRIDE_LIBRARY_PATH,
+                    "librarySha256": shim_library_digest,
+                    "preload": "conditional-bootstrap-export",
+                    "references": [
+                        "https://docs.acurast.com/developers/build/cargo-runtime-environment/#network-interfaces-getifaddrs",
+                        "https://github.com/Acurast/acurast-example-apps/tree/main/apps/app-cargo-openclaw/app",
+                    ],
+                },
                 "paths": list(OVERLAY_PATHS),
             },
             "materialization": {
@@ -1005,6 +1141,7 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
                     target,
                     image,
                     helper,
+                    shim_library_digest,
                     archive_root,
                     final_inventory_digest,
                     fixed_created_at,

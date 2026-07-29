@@ -5,8 +5,9 @@ Cargo/PRoot workloads.
 
 This repository makes the complete image transformation public. Every release
 starts from immutable upstream bytes, verifies every source digest before
-extraction, overlays the released static `liskov-runtime-contact` helper, and
-emits a deterministic plain `tar.xz` rootfs accepted by Acurast Cargo.
+extraction, overlays the released static `liskov-runtime-contact` helper and
+the loopback-only Acurast `getifaddrs` compatibility shim, and emits a
+deterministic plain `tar.xz` rootfs accepted by Acurast Cargo.
 
 ## Image tracks
 
@@ -32,12 +33,19 @@ The base filesystem receives exactly these Liskov-owned paths:
 
 ```text
 /usr/local/bin/liskov-runtime-contact
+/usr/local/lib/libgetifaddrs_override.so
 /usr/share/doc/liskov-runtime-contact/LICENSE
+/usr/share/liskov-runtime-images/getifaddrs_override.c
 /usr/share/liskov-runtime-images/provenance.json
 ```
 
 The helper is the exact static AArch64 release binary from
 [`proof-computer/liskov-runtime-cargo`](https://github.com/proof-computer/liskov-runtime-cargo).
+The Apache-2.0 shim is compiled deterministically from the included source and
+implements the loopback-only workaround documented for Cargo/PRoot by
+[Acurast](https://docs.acurast.com/developers/build/cargo-runtime-environment/#network-interfaces-getifaddrs).
+Liskov's bootstrap exports it through `LD_PRELOAD` only when the verified
+library is present in the rootfs.
 The embedded provenance record identifies the upstream material, base
 inventory, helper release, and deterministic archive policy. Numeric ownership,
 timestamps, member order, and compression are normalized and declared
@@ -69,7 +77,7 @@ Each target publishes:
 
 `files.json` inventories every archive member, including symlinks, hardlinks,
 device metadata, and extended-attribute digests. `overlay.json` isolates the
-three declared additions. GitHub's artifact attestation binds the final files
+five declared additions. GitHub's artifact attestation binds the final files
 to the public workflow and source commit.
 
 ## Build and reproduce
@@ -79,6 +87,8 @@ Requirements:
 - Python 3.11 or newer
 - GNU tar
 - XZ Utils
+- an AArch64 C compiler (`cc` on AArch64 or `aarch64-linux-gnu-gcc` elsewhere;
+  override the executable with `LISKOV_AARCH64_CC`)
 - outbound HTTPS to GitHub Releases and the Docker registry
 
 Build one target:
@@ -119,6 +129,8 @@ GitHub CI builds every image twice on a public native ARM64 runner. It then:
 - checks the single root directory and canonical metadata;
 - verifies the embedded helper SHA-256, AArch64 ELF machine, static linkage,
   and lack of a dynamic interpreter;
+- validates the shim's AArch64 shared-object shape, exported functions,
+  loopback-only result, source digest, and provenance binding;
 - boots the exact uploaded artifact under QEMU/PRoot in a separate job;
 - resolves the production Liskov hostname;
 - proves abstract Unix bridge-socket access and fail-closed exit status;

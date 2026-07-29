@@ -25,6 +25,12 @@ def main() -> int:
     expected_root = image["archiveRoot"]
     expected_epoch = lock["sourceDateEpoch"]
     helper_member = f"{expected_root}/usr/local/bin/liskov-runtime-contact"
+    shim_library_member = (
+        f"{expected_root}/usr/local/lib/libgetifaddrs_override.so"
+    )
+    shim_source_member = (
+        f"{expected_root}/usr/share/liskov-runtime-images/getifaddrs_override.c"
+    )
     provenance_member = (
         f"{expected_root}/usr/share/liskov-runtime-images/provenance.json"
     )
@@ -50,7 +56,13 @@ def main() -> int:
                 raise SystemExit(f"non-canonical mtime on {name}")
 
         by_name = dict(zip(names, members, strict=True))
-        for required in (helper_member, provenance_member, license_member):
+        for required in (
+            helper_member,
+            shim_library_member,
+            shim_source_member,
+            provenance_member,
+            license_member,
+        ):
             if required not in by_name:
                 raise SystemExit(f"missing required member {required}")
         helper_info = by_name[helper_member]
@@ -62,6 +74,29 @@ def main() -> int:
         helper_digest = hashlib.sha256(helper_file.read()).hexdigest()
         if helper_digest != helper["binarySha256"]:
             raise SystemExit("embedded helper digest differs from sources.lock.json")
+        shim_library_file = archive.extractfile(by_name[shim_library_member])
+        if shim_library_file is None:
+            raise SystemExit("could not read embedded getifaddrs override")
+        shim_library = shim_library_file.read()
+        if (
+            len(shim_library) < 64
+            or shim_library[:4] != b"\x7fELF"
+            or shim_library[4] != 2
+            or shim_library[5] != 1
+            or int.from_bytes(shim_library[16:18], "little") != 3
+            or int.from_bytes(shim_library[18:20], "little") != 183
+        ):
+            raise SystemExit("embedded getifaddrs override is not an AArch64 shared object")
+        shim_library_digest = hashlib.sha256(shim_library).hexdigest()
+        shim_source_file = archive.extractfile(by_name[shim_source_member])
+        if shim_source_file is None:
+            raise SystemExit("could not read embedded getifaddrs override source")
+        shim_source_digest = hashlib.sha256(shim_source_file.read()).hexdigest()
+        repository_source_digest = hashlib.sha256(
+            (REPOSITORY_ROOT / "assets/getifaddrs_override.c").read_bytes()
+        ).hexdigest()
+        if shim_source_digest != repository_source_digest:
+            raise SystemExit("embedded getifaddrs source differs from the repository source")
 
         provenance_file = archive.extractfile(by_name[provenance_member])
         if provenance_file is None:
@@ -71,6 +106,14 @@ def main() -> int:
             raise SystemExit("embedded provenance domain is invalid")
         if provenance.get("target") != args.target:
             raise SystemExit("embedded provenance target is invalid")
+        shim_provenance = provenance.get("overlay", {}).get(
+            "networkInterfaceOverride", {}
+        )
+        if (
+            shim_provenance.get("sourceSha256") != shim_source_digest
+            or shim_provenance.get("librarySha256") != shim_library_digest
+        ):
+            raise SystemExit("embedded getifaddrs provenance digest is invalid")
 
     print(
         json.dumps(
@@ -81,6 +124,7 @@ def main() -> int:
                 "archiveRoot": expected_root,
                 "memberCount": len(members),
                 "helperSha256": helper_digest,
+                "getifaddrsOverrideSha256": shim_library_digest,
             },
             sort_keys=True,
         )

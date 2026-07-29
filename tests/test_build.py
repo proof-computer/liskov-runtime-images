@@ -34,6 +34,11 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["supportStatus"],
             "release-candidate",
         )
+        self.assertEqual(lock["helper"]["version"], "0.2.0")
+        self.assertEqual(
+            lock["helper"]["releaseCommit"],
+            "0f9e9c239f566a6ad9de2bde91f291380af1984d",
+        )
         for digest in (
             lock["helper"]["archiveSha256"],
             lock["helper"]["binarySha256"],
@@ -44,6 +49,39 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["manifestDigest"],
             "manifestDigest",
         )
+
+    def test_overlay_includes_owned_getifaddrs_source_and_library(self) -> None:
+        self.assertEqual(
+            build_image.OVERLAY_PATHS,
+            (
+                "usr/local/bin/liskov-runtime-contact",
+                "usr/share/doc/liskov-runtime-contact/LICENSE",
+                "usr/local/lib/libgetifaddrs_override.so",
+                "usr/share/liskov-runtime-images/getifaddrs_override.c",
+                "usr/share/liskov-runtime-images/provenance.json",
+            ),
+        )
+        source = build_image.GETIFADDRS_OVERRIDE_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("int getifaddrs(struct ifaddrs **interfaces)", source)
+        self.assertIn("void freeifaddrs(struct ifaddrs *interfaces)", source)
+        self.assertIn('strdup("lo")', source)
+        self.assertNotIn("Acurast", source)
+
+    def test_shared_object_verifier_rejects_wrong_machine_and_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "shim.so"
+            elf = bytearray(64)
+            elf[:4] = b"\x7fELF"
+            elf[4] = 2
+            elf[5] = 1
+            elf[16:18] = (3).to_bytes(2, "little")
+            elf[18:20] = (183).to_bytes(2, "little")
+            path.write_bytes(elf)
+            build_image.verify_aarch64_shared_object(path)
+            elf[18:20] = (62).to_bytes(2, "little")
+            path.write_bytes(elf)
+            with self.assertRaises(build_image.BuildError):
+                build_image.verify_aarch64_shared_object(path)
 
 
 class ExtractionTests(unittest.TestCase):
