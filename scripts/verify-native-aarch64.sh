@@ -108,7 +108,7 @@ finally:
 PY
 
 version=$("${helper}" --version)
-if [[ "${version}" != "liskov-runtime-contact 0.2.0" ]]; then
+if [[ "${version}" != "liskov-runtime-contact 0.2.1" ]]; then
   echo "unexpected embedded helper version: ${version}" >&2
   exit 1
 fi
