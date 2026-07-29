@@ -39,6 +39,11 @@ import json, pathlib, sys
 lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
 print(lock["images"][sys.argv[2]]["archiveRoot"])
 ' "${repository_root}/sources.lock.json" "${target}")
+expected_helper_version=$(python3 -c '
+import json, pathlib, sys
+lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+print(lock["helper"]["version"])
+' "${repository_root}/sources.lock.json")
 tar -xJf "${archive}" -C "${verification_root}" \
   "${root_name}/usr/local/bin/liskov-runtime-contact" \
   "${root_name}/usr/local/lib/libgetifaddrs_override.so"
@@ -108,7 +113,7 @@ finally:
 PY
 
 version=$("${helper}" --version)
-if [[ "${version}" != "liskov-runtime-contact 0.2.1" ]]; then
+if [[ "${version}" != "liskov-runtime-contact ${expected_helper_version}" ]]; then
   echo "unexpected embedded helper version: ${version}" >&2
   exit 1
 fi

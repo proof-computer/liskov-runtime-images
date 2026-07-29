@@ -77,6 +77,17 @@ class SourceLockTests(unittest.TestCase):
             release_workflow,
         )
 
+    def test_native_verifier_reads_the_locked_helper_version(self) -> None:
+        verifier = (
+            REPOSITORY_ROOT / "scripts/verify-native-aarch64.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('lock["helper"]["version"]', verifier)
+        self.assertIn(
+            'liskov-runtime-contact ${expected_helper_version}',
+            verifier,
+        )
+        self.assertNotRegex(verifier, r"liskov-runtime-contact 0\.\d+\.\d+")
+
     def test_shared_object_verifier_rejects_wrong_machine_and_type(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "shim.so"
