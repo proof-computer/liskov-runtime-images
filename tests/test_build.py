@@ -97,6 +97,62 @@ class SourceLockTests(unittest.TestCase):
         )
 
 
+class CanaryContractTests(unittest.TestCase):
+    def load_manifest(self, name: str) -> dict[str, object]:
+        return json.loads(
+            (REPOSITORY_ROOT / ".liskov" / name).read_text(encoding="utf-8")
+        )
+
+    def test_probe_is_exactly_bounded_and_final_canaries_do_not_nest_helper(self) -> None:
+        probe = self.load_manifest("canary-v4-bridge-probe.json")
+        v4 = self.load_manifest("canary-v4-control.json")
+        debian = self.load_manifest("canary-debian-trixie.json")
+
+        self.assertEqual(
+            probe["runtime"]["command"],
+            "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
+        )
+        for manifest in (probe, v4, debian):
+            self.assertEqual(
+                manifest["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"],
+                0,
+            )
+            self.assertEqual(
+                manifest["deployment"]["spend"],
+                {
+                    "maxRewardPlanckPerJob": "40000000000",
+                    "maxNativeFeePlanckPerJob": "10000000000",
+                },
+            )
+        for manifest in (v4, debian):
+            self.assertNotIn(
+                "liskov-runtime-contact",
+                manifest["runtime"]["command"],
+            )
+
+    def test_canary_workflows_pin_the_verified_rc3_archives(self) -> None:
+        expected = {
+            "canary-v4-bridge-probe.yml": (
+                "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
+                "74e254fcfd0313913df7887336003dcb9d63bae32cc5a0b5a3f56dfaa8a8a4e9",
+            ),
+            "canary-v4-control.yml": (
+                "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
+                "74e254fcfd0313913df7887336003dcb9d63bae32cc5a0b5a3f56dfaa8a8a4e9",
+            ),
+            "canary-debian-trixie.yml": (
+                "liskov-runtime-image-debian-trixie-aarch64.tar.xz",
+                "af7e98ffdf03e56194359a97b8daa971dc5bc9bc8016652fafcb1fc2e648cbc8",
+            ),
+        }
+        for workflow_name, (archive, digest) in expected.items():
+            workflow = (
+                REPOSITORY_ROOT / ".github" / "workflows" / workflow_name
+            ).read_text(encoding="utf-8")
+            self.assertIn(f"/v0.1.0-rc.3/{archive}", workflow)
+            self.assertIn(f"expected-sha256: {digest}", workflow)
+
+
 class ExtractionTests(unittest.TestCase):
     def write_tar(self, path: Path, entries: list[tuple[str, bytes]]) -> None:
         with tarfile.open(path, "w") as archive:

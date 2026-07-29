@@ -1,16 +1,16 @@
 {
   "schema": "proof.liskov.application-manifest",
   "schemaVersion": 4,
-  "applicationId": "liskov-runtime-images-v5-canary",
+  "applicationId": "liskov-runtime-images-v4-canary",
   "metadata": {
     "appType": "background-worker",
-    "description": "Bounded Acurast candidate canary for the OCI-derived, PRoot-Distro v5-compatible Debian Trixie Liskov rootfs.",
+    "description": "One-shot, bounded bridge-contract probe using the Termux PRoot-Distro v4.30.1-derived compatibility control.",
     "labels": [
       "liskov",
       "runtime-image",
       "canary",
-      "debian-trixie",
-      "proot-v5-compatible"
+      "v4-control",
+      "bridge-probe"
     ]
   },
   "release": {
@@ -24,12 +24,12 @@
       "allowedRefs": [
         "refs/heads/main"
       ],
-      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-debian-trixie.yml@refs/heads/main",
-      "manifestPath": ".liskov/canary-debian-trixie.json"
+      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-v4-bridge-probe.yml@refs/heads/main",
+      "manifestPath": ".liskov/canary-v4-bridge-probe.json"
     }
   },
   "runtime": {
-    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-handoff; exec sleep 420'",
+    "command": "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
     "role": "runtime-image-canary",
     "resources": {
       "memoryMiB": 128,

@@ -1,4 +1,4 @@
-name: Canary v4 control image
+name: Probe v4 Cargo bridge
 
 on:
   workflow_dispatch:
@@ -12,6 +12,6 @@ jobs:
     uses: proof-computer/liskov-github-actions/.github/workflows/runtime-image.yml@v1
     with:
       application-id: liskov-runtime-images-v4-canary
-      manifest-path: .liskov/canary-v4-control.json
+      manifest-path: .liskov/canary-v4-bridge-probe.json
       image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.3/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
       expected-sha256: 74e254fcfd0313913df7887336003dcb9d63bae32cc5a0b5a3f56dfaa8a8a4e9
