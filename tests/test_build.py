@@ -67,6 +67,16 @@ class SourceLockTests(unittest.TestCase):
         self.assertIn('strdup("lo")', source)
         self.assertNotIn("Acurast", source)
 
+    def test_release_notes_track_the_locked_helper_version(self) -> None:
+        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_text())
+        release_workflow = (
+            REPOSITORY_ROOT / ".github/workflows/release.yml"
+        ).read_text()
+        self.assertIn(
+            f"`liskov-runtime-contact\\` v{lock['helper']['version']} binary",
+            release_workflow,
+        )
+
     def test_shared_object_verifier_rejects_wrong_machine_and_type(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "shim.so"
