@@ -106,28 +106,28 @@ def build_getifaddrs_override(destination: Path) -> None:
             f"AArch64 C compiler is missing: {compiler}; set LISKOV_AARCH64_CC"
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    compiler_source = destination.with_name("getifaddrs_override.c")
-    shutil.copyfile(GETIFADDRS_OVERRIDE_SOURCE, compiler_source)
-    command = [
-        compiler,
-        "-std=c11",
-        "-D_GNU_SOURCE",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-        "-O2",
-        "-fPIC",
-        "-fno-ident",
-        "-shared",
-        "-Wl,--build-id=none",
-        "-Wl,--as-needed",
-        "-Wl,-z,relro,-z,now",
-        "-Wl,-s",
-        "-o",
-        str(destination),
-        str(compiler_source),
-    ]
-    try:
+    with tempfile.TemporaryDirectory(prefix="liskov-getifaddrs-build-") as temporary:
+        compiler_source = Path(temporary) / "getifaddrs_override.c"
+        shutil.copyfile(GETIFADDRS_OVERRIDE_SOURCE, compiler_source)
+        command = [
+            compiler,
+            "-std=c11",
+            "-D_GNU_SOURCE",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-O2",
+            "-fPIC",
+            "-fno-ident",
+            "-shared",
+            "-Wl,--build-id=none",
+            "-Wl,--as-needed",
+            "-Wl,-z,relro,-z,now",
+            "-Wl,-s",
+            "-o",
+            str(destination),
+            str(compiler_source),
+        ]
         result = subprocess.run(
             command,
             check=False,
@@ -140,8 +140,6 @@ def build_getifaddrs_override(destination: Path) -> None:
                 "TZ": "UTC",
             },
         )
-    finally:
-        compiler_source.unlink(missing_ok=True)
     if result.returncode != 0:
         error = result.stderr.decode("utf-8", errors="replace")[-4096:]
         raise BuildError(f"getifaddrs override compilation failed: {error}")

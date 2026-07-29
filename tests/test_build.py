@@ -83,6 +83,19 @@ class SourceLockTests(unittest.TestCase):
             with self.assertRaises(build_image.BuildError):
                 build_image.verify_aarch64_shared_object(path)
 
+    def test_compiler_staging_path_is_not_part_of_the_rootfs(self) -> None:
+        source = (
+            REPOSITORY_ROOT / "scripts/build-image.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'TemporaryDirectory(prefix="liskov-getifaddrs-build-")',
+            source,
+        )
+        self.assertNotIn(
+            'destination.with_name("getifaddrs_override.c")',
+            source,
+        )
+
 
 class ExtractionTests(unittest.TestCase):
     def write_tar(self, path: Path, entries: list[tuple[str, bytes]]) -> None:
