@@ -5,10 +5,12 @@
 - Add the digest-pinned Debian Trixie AArch64 OCI-derived release candidate.
 - Add the exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64
   compatibility control.
-- Embed `liskov-runtime-contact` v0.2.6 through an exact five-path overlay,
+- Embed `liskov-runtime-contact` v0.2.7 through an exact five-path overlay,
   including owned pre-contact reporting and a budget-correct, closed-enum
-  bridge probe. Signed contact and every decision-critical probe now use the
-  Processor-compatible numeric-string request ID; the incompatible long-ID
+  bridge probe. Signed contact and every decision-critical probe now use unique
+  Processor-compatible decimal `UInt` request IDs. The probe proves bounded
+  read-only RPC dispatch before giving Android Binder-backed signing the
+  remainder of its shared 15-second budget; the incompatible long-ID
   comparison remains bounded evidence only.
 - Enable log capture only for the bounded v4 bridge probe; final v4 and Debian
   canaries remain unchanged and keep log capture disabled.
