@@ -35,7 +35,7 @@
     "resources": {
       "memoryMiB": 128,
       "storageMiB": 256,
-      "networkRequestQuota": 10
+      "networkRequestQuota": 0
     },
     "requiredModules": [
       "Shell"

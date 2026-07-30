@@ -159,6 +159,10 @@ class CanaryContractTests(unittest.TestCase):
         for manifest in (probe, v4, debian):
             self.assertEqual(manifest["runtime"]["maxGenerations"], 1)
             self.assertEqual(
+                manifest["runtime"]["resources"]["networkRequestQuota"],
+                0,
+            )
+            self.assertEqual(
                 manifest["deployment"]["schedule"],
                 {
                     "durationMs": 900000,
