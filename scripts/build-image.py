@@ -77,6 +77,12 @@ def verify_digest(path: Path, expected: str, label: str) -> None:
         raise BuildError(f"{label} SHA-256 mismatch: expected {expected}, got {actual}")
 
 
+def verify_size(path: Path, expected: int, label: str) -> None:
+    actual = path.stat().st_size
+    if actual != expected:
+        raise BuildError(f"{label} size mismatch: expected {expected}, got {actual}")
+
+
 def verify_aarch64_shared_object(path: Path) -> None:
     bytes_ = path.read_bytes()
     if (
@@ -962,6 +968,11 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         helper["archiveSha256"],
         "liskov-runtime-contact release archive",
     )
+    verify_size(
+        helper_archive,
+        helper["archiveSize"],
+        "liskov-runtime-contact release archive",
+    )
 
     with tempfile.TemporaryDirectory(prefix=f"liskov-runtime-images-{target}-") as temporary:
         work = Path(temporary)
@@ -1009,6 +1020,7 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         if not helper_binary.is_file() or not helper_license.is_file():
             raise BuildError("helper release archive is missing its binary or license")
         verify_digest(helper_binary, helper["binarySha256"], "liskov-runtime-contact binary")
+        verify_size(helper_binary, helper["binarySize"], "liskov-runtime-contact binary")
 
         binary_destination = root / HELPER_PATH
         license_destination = root / HELPER_LICENSE_PATH
@@ -1048,7 +1060,9 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
                 "helperVersion": helper["version"],
                 "helperReleaseCommit": helper["releaseCommit"],
                 "helperArchiveSha256": helper["archiveSha256"],
+                "helperArchiveSize": helper["archiveSize"],
                 "helperBinarySha256": helper["binarySha256"],
+                "helperBinarySize": helper["binarySize"],
                 "networkInterfaceOverride": {
                     "contract": "loopback-only-getifaddrs-v1",
                     "sourcePath": GETIFADDRS_OVERRIDE_SOURCE_PATH,

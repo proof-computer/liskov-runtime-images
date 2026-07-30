@@ -71,7 +71,10 @@ def main() -> int:
         helper_file = archive.extractfile(helper_info)
         if helper_file is None:
             raise SystemExit("could not read embedded helper")
-        helper_digest = hashlib.sha256(helper_file.read()).hexdigest()
+        helper_bytes = helper_file.read()
+        if len(helper_bytes) != helper["binarySize"]:
+            raise SystemExit("embedded helper size differs from sources.lock.json")
+        helper_digest = hashlib.sha256(helper_bytes).hexdigest()
         if helper_digest != helper["binarySha256"]:
             raise SystemExit("embedded helper digest differs from sources.lock.json")
         shim_library_file = archive.extractfile(by_name[shim_library_member])

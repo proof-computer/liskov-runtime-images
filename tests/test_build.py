@@ -34,11 +34,13 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["supportStatus"],
             "release-candidate",
         )
-        self.assertEqual(lock["helper"]["version"], "0.2.5")
+        self.assertEqual(lock["helper"]["version"], "0.2.6")
         self.assertEqual(
             lock["helper"]["releaseCommit"],
-            "505dc806e0b6a523e2e033c042af0332ba152ad3",
+            "4f46bbfc51928546437d1a3fcbb2d02117aa2cb3",
         )
+        self.assertEqual(lock["helper"]["archiveSize"], 1_316_832)
+        self.assertEqual(lock["helper"]["binarySize"], 2_426_680)
         for digest in (
             lock["helper"]["archiveSha256"],
             lock["helper"]["binarySha256"],
@@ -71,7 +73,10 @@ class SourceLockTests(unittest.TestCase):
         release_workflow = (
             REPOSITORY_ROOT / ".github/workflows/release.yml"
         ).read_text()
-        self.assertIn("helper_version=$(jq -er '.helper.version' sources.lock.json)", release_workflow)
+        self.assertIn(
+            "helper_version=$(jq -er '.helper.version' sources.lock.json)",
+            release_workflow,
+        )
         self.assertIn(
             r"\`liskov-runtime-contact\` v${helper_version} binary",
             release_workflow,
@@ -103,6 +108,14 @@ class SourceLockTests(unittest.TestCase):
             path.write_bytes(elf)
             with self.assertRaises(build_image.BuildError):
                 build_image.verify_aarch64_shared_object(path)
+
+    def test_size_verifier_rejects_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "artifact"
+            path.write_bytes(b"fixed-size")
+            build_image.verify_size(path, 10, "test artifact")
+            with self.assertRaises(build_image.BuildError):
+                build_image.verify_size(path, 9, "test artifact")
 
     def test_compiler_staging_path_is_not_part_of_the_rootfs(self) -> None:
         source = (
