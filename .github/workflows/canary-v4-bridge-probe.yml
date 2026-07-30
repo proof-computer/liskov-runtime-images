@@ -14,8 +14,8 @@ jobs:
     with:
       application-id: liskov-runtime-images-v4-canary
       manifest-path: .liskov/canary-v4-bridge-probe.json
-      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.10/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
-      expected-sha256: 8ca544346cea985d22dc688d525407ae7d8aa200c916de1f3c3c359eef0f906e
+      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.11/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
+      expected-sha256: c662589dc69eff96cb596a9b24cbff270004f502f4ee6357de64035b970d5153
       attestation-repository: proof-computer/liskov-runtime-images
-      attestation-source-digest: 7c72957194e5055d3a937968c8db709cceddba73
+      attestation-source-digest: 324c6f8b756c26fedb3fdf24463818d629203e78
       attestation-signer-workflow: proof-computer/liskov-runtime-images/.github/workflows/ci.yml
