@@ -13,5 +13,5 @@ jobs:
     with:
       application-id: liskov-runtime-images-v4-canary
       manifest-path: .liskov/canary-v4-control.json
-      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.6/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
-      expected-sha256: abbca8d68399609f3ec368f89e7b1efddef15758cda15a45e08aea73be1fca41
+      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.7/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
+      expected-sha256: b0c2274716aad8c004b0234ba4523fbb812c7ebe6473ac2787ecba19445e39c6
