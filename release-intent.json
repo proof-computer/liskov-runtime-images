@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "version": "v0.1.0-rc.9",
-  "materialInputFingerprint": "sha256:5bf285a8f90cd9faba8ae2d1619cf3b7b7ee76cb0d7826b8678146142f439f7f",
+  "version": "v0.1.0-rc.10",
+  "materialInputFingerprint": "sha256:9210e507c8ce24687f77dc396d2fad96a54728f82c3b184826ac45db731711ee",
   "targets": [
     "debian-trixie",
     "v4-control"
