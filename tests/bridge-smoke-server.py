@@ -43,6 +43,7 @@ def main() -> int:
             method = request.get("method", "")
             methods.append(method)
             results = {
+                "signer_publicKey": {"publicKey": "04" + "22" * 64},
                 "processor_version": {"version": "1.25.1"},
                 "deployment_id": {
                     "id": "7",
@@ -61,10 +62,14 @@ def main() -> int:
             }
             if args.probe:
                 processor_version_count = methods.count("processor_version")
-                if method == "processor_version" and processor_version_count == 1:
+                if method == "signer_publicKey":
                     if request.get("id") != "1":
                         raise RuntimeError(
-                            "probe did not use the documented short request id"
+                            "example probe did not use request id 1"
+                        )
+                    if request.get("params") != [{"curve": "p256"}]:
+                        raise RuntimeError(
+                            "example probe did not use the documented p256 params"
                         )
                 if method == "processor_version" and processor_version_count == 2:
                     if not str(request.get("id", "")).startswith(

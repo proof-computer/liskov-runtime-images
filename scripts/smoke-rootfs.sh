@@ -214,7 +214,7 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     echo "bridge probe smoke expected permanent HTTP rejection status 70, got ${probe_status}" >&2
     exit 1
   fi
-  expected_probe_methods=$'processor_version\ndeployment_id\ndeployment_ipfsHash\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign\nprocessor_version\ndeployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
+  expected_probe_methods=$'signer_publicKey\ndeployment_assignedProcessors\nprocessor_version\ndeployment_id\ndeployment_ipfsHash\ndeployment_publicKeys\nsigner_sign\nprocessor_version\ndeployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
   if [[ "$(cat "${probe_method_file}")" != "${expected_probe_methods}" ]]; then
     echo "bridge probe smoke did not cover the expected bounded methods" >&2
     exit 1

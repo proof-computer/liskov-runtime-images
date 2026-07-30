@@ -8,15 +8,15 @@
     "role": "compatibility-reference"
   },
   "helper": {
-    "version": "0.2.8",
-    "releaseCommit": "d03e223609bed02283481a086e52f17471ce72b7",
-    "archiveUrl": "https://github.com/proof-computer/liskov-runtime-cargo/releases/download/v0.2.8/liskov-runtime-contact-v0.2.8-aarch64-unknown-linux-musl.tar.gz",
-    "archiveSha256": "98972ccb1d96d9478c83fa75edb0db2ce884073d3c4e4362dc62c24327fdf4cc",
-    "archiveSize": 1317892,
-    "binarySha256": "40ff50f1989474bfb86a18a622957936e8711ac48ceebfdcd4e081d2a19ea68d",
+    "version": "0.2.9",
+    "releaseCommit": "0bfbde8041e6597fc6730334ec16e2d370ae3256",
+    "archiveUrl": "https://github.com/proof-computer/liskov-runtime-cargo/releases/download/v0.2.9/liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl.tar.gz",
+    "archiveSha256": "d8f7fe7bae05c17733667d5db7a920ca509ab712b1aab733699ae2e44848a122",
+    "archiveSize": 1317413,
+    "binarySha256": "7cb01b423735b870c66f38400c9c429ac843b45569d3fa67d1e00c8442400595",
     "binarySize": 2426680,
-    "binaryPath": "liskov-runtime-contact-v0.2.8-aarch64-unknown-linux-musl/liskov-runtime-contact",
-    "licensePath": "liskov-runtime-contact-v0.2.8-aarch64-unknown-linux-musl/LICENSE"
+    "binaryPath": "liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl/liskov-runtime-contact",
+    "licensePath": "liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl/LICENSE"
   },
   "images": {
     "v4-control": {
