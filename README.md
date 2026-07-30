@@ -62,7 +62,9 @@ Download the image and its metadata from the same GitHub release, then:
 sha256sum --check SHA256SUMS
 gh attestation verify \
   liskov-runtime-image-debian-trixie-aarch64.tar.xz \
-  --repo proof-computer/liskov-runtime-images
+  --repo proof-computer/liskov-runtime-images \
+  --source-digest <release-source-commit> \
+  --signer-workflow proof-computer/liskov-runtime-images/.github/workflows/ci.yml
 ```
 
 Each target publishes:
@@ -73,12 +75,16 @@ Each target publishes:
 <stem>.overlay.json
 <stem>.provenance.json
 <stem>.spdx.json
+BUILD-MANIFEST.json
+SHA256SUMS
 ```
 
 `files.json` inventories every archive member, including symlinks, hardlinks,
 device metadata, and extended-attribute digests. `overlay.json` isolates the
-five declared additions. GitHub's artifact attestation binds the final files
-to the public workflow and source commit.
+five declared additions. `BUILD-MANIFEST.json` binds the repository, source
+commit, release version, material-input fingerprint, complete target/file set,
+sizes, digests, and qualifying workflow run. GitHub's artifact attestations
+bind every final file to that public CI workflow and source commit.
 
 ## Build and reproduce
 
@@ -105,6 +111,10 @@ scripts/verify-reproducible.sh debian-trixie
 scripts/verify-reproducible.sh v4-control
 ```
 
+These double-build commands are retained for release troubleshooting. They are
+not the ordinary pre-commit gate and do not replace the authoritative native
+ARM64 release qualification.
+
 The source lock contains no mutable trust anchor. For the OCI image, the build
 downloads the exact platform manifest, verifies its SHA-256, requires the exact
 locked config and layer descriptors, verifies every blob, validates
@@ -112,17 +122,28 @@ locked config and layer descriptors, verifies every blob, validates
 
 ## Validation
 
-Offline unit tests cover source-lock structure, traversal rejection,
-symlink-parent rejection, OCI whiteouts, symlink inventory binding, and
-canonical archive reproduction:
+The change-aware local gate runs unit, classifier, workflow-contract,
+shell-syntax, and Python compile checks for every change. Material changes also
+construct each affected target once:
 
 ```sh
-make test
+scripts/validate-change.sh
 ```
 
-GitHub CI builds every image twice on a public native ARM64 runner. It then:
+CI has three fail-closed modes:
 
-- compares every output byte-for-byte;
+- `fast` for proven non-image inputs such as documentation, ordinary tests,
+  release/canary workflows, and canary manifests; no rootfs is constructed;
+- `material` for the source lock, builder/extractor/archive/SBOM code, overlay,
+  native/PRoot validation code, recipe code, or any unknown path; each target is
+  constructed once;
+- `release` only when the commit updates a valid `release-intent.json` whose
+  declared version, exact target set, and material-input fingerprint match the
+  checked-out tree; each target is constructed twice in clean output trees.
+
+Material and release CI then:
+
+- compares every output byte-for-byte in release mode;
 - executes the embedded static helper directly on the native ARM64 host;
 - compares the locked OCI layer materialization with the exact PRoot-Distro
   v5.5.0 extractor at commit `0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26`;
@@ -136,7 +157,15 @@ GitHub CI builds every image twice on a public native ARM64 runner. It then:
 - proves abstract Unix bridge-socket access and fail-closed exit status;
 - exercises the static helper's bundled-root HTTPS path from the Debian image
   without installing a rootfs CA bundle or client;
-- publishes checksums, metadata, and GitHub build attestations.
+- in release mode, packages checksums, metadata, `BUILD-MANIFEST.json`, and
+  GitHub build attestations into a commit-named bundle retained for 90 days.
+
+Tag publication requires the tag to point at the exact release-intended commit
+and match its declared version. It locates the successful release-mode run,
+verifies the manifest, checksums, complete target set, workflow/run identity,
+source commit, and every attestation, then publishes those files unchanged.
+Missing, expired, incomplete, additional, mismatched, or unattested files fail
+closed. Release publication contains no construction or QEMU/PRoot job.
 
 Successful local and CI smoke tests are necessary but not sufficient for
 support. A release candidate becomes the maintained default only after a
@@ -150,9 +179,12 @@ requires:
 
 1. updating `sources.lock.json`;
 2. reviewing the source and overlay diff;
-3. reproducing both builds;
-4. passing native ARM64 and QEMU/PRoot CI;
-5. publishing a release candidate;
+3. updating `release-intent.json` in the release-intended material commit (or
+   in a subsequent qualification-only commit) with the fingerprint printed by
+   `python3 scripts/change-classifier.py fingerprint`;
+4. passing the two-clean-build native ARM64 and QEMU/PRoot release CI;
+5. tagging that exact commit with the declared release version so publication
+   reuses the qualified bundle;
 6. running a new bounded Acurast canary before promotion.
 
 Never replace an existing release asset in place.

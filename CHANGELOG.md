@@ -16,3 +16,8 @@
 - Add deterministic archives, inventories, overlay ledgers, SPDX SBOMs,
   provenance records, native ARM64/PRoot validation, checksums, and GitHub
   artifact attestations.
+- Classify commits into fast, material, and release modes so ordinary material
+  development builds each target once while release-intended commits alone
+  prove two clean native builds and retain an attested, commit-bound bundle.
+- Publish tags only from the exact qualified bundle; release and canary-pin
+  workflows never reconstruct a rootfs.

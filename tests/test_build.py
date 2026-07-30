@@ -68,12 +68,12 @@ class SourceLockTests(unittest.TestCase):
         self.assertNotIn("Acurast", source)
 
     def test_release_notes_track_the_locked_helper_version(self) -> None:
-        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_text())
         release_workflow = (
             REPOSITORY_ROOT / ".github/workflows/release.yml"
         ).read_text()
+        self.assertIn("helper_version=$(jq -er '.helper.version' sources.lock.json)", release_workflow)
         self.assertIn(
-            f"`liskov-runtime-contact\\` v{lock['helper']['version']} binary",
+            r"\`liskov-runtime-contact\` v${helper_version} binary",
             release_workflow,
         )
 

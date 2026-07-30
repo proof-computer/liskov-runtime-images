@@ -9,124 +9,103 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [v4-control, debian-trixie]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
-      - name: Check out exact PRoot-Distro compatibility reference
-        if: matrix.target == 'debian-trixie'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: termux/proot-distro
-          ref: 0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26
-          path: .compat/proot-distro
-          persist-credentials: false
-
-      - name: Install native verification dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes \
-            binutils file gcc libc6-dev xz-utils
-
-      - name: Reproduce and verify release image on native AArch64
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          python3 scripts/build-image.py "${TARGET}" --output-dir out/a
-          python3 scripts/build-image.py "${TARGET}" --output-dir out/b
-          diff -qr out/a out/b
-          archive=$(find out/a -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
-          scripts/verify-native-aarch64.sh "${TARGET}" "${archive}"
-
-      - name: Compare OCI materialization with PRoot-Distro v5.5.0
-        if: matrix.target == 'debian-trixie'
-        run: |
-          set -euo pipefail
-          python3 scripts/verify-proot-distro-v5.py \
-            --proot-distro-source .compat/proot-distro
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: release-${{ matrix.target }}
-          path: out/a/*
-          if-no-files-found: error
-          retention-days: 7
-
-  proot:
-    needs: build
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [v4-control, debian-trixie]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
-      - name: Install QEMU/PRoot smoke dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes \
-            binutils file proot qemu-user-static xz-utils
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: release-${{ matrix.target }}
-          path: smoke
-
-      - name: Boot and smoke release image under QEMU/PRoot
-        env:
-          TARGET: ${{ matrix.target }}
-          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
-        run: |
-          set -euo pipefail
-          archive=$(find smoke -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
-          scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
-
   publish:
-    needs: [build, proot]
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
+      attestations: read
       contents: write
-      id-token: write
-      attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          pattern: release-*
-          path: release
-          merge-multiple: true
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - name: Create release checksums
+      - name: Validate tag-bound release intent
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          (
-            cd release
-            sha256sum liskov-runtime-image-* > SHA256SUMS
-            sha256sum --check SHA256SUMS
+          python3 scripts/change-classifier.py validate-release-intent \
+            --release-tag "${TAG}"
+
+      - name: Locate exact successful release qualification
+        id: qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE_NAME: release-bundle-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t candidate_runs < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&status=success&per_page=100" \
+              --jq '.workflow_runs[].id'
           )
+          release_run_id=
+          for candidate_run_id in "${candidate_runs[@]}"; do
+            artifact_count=$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${candidate_run_id}/artifacts" \
+                --jq "[.artifacts[] | select(.name == \"${BUNDLE_NAME}\" and .expired == false)] | length"
+            )
+            if [[ "${artifact_count}" == "1" ]]; then
+              release_run_id="${candidate_run_id}"
+              break
+            fi
+          done
+          if [[ -z "${release_run_id}" ]]; then
+            echo "no unexpired successful release-mode bundle exists for ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          echo "run-id=${release_run_id}" >> "${GITHUB_OUTPUT}"
 
-      - name: Attest release assets
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
-        with:
-          subject-path: release/*
+      - name: Download exact qualified bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ steps.qualification.outputs.run-id }}
+          BUNDLE_NAME: release-bundle-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh run download "${RELEASE_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${BUNDLE_NAME}" \
+            --dir release
 
-      - name: Publish GitHub release
+      - name: Verify manifest, checksums, targets, and qualification identity
+        env:
+          RELEASE_RUN_ID: ${{ steps.qualification.outputs.run-id }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          material_fingerprint=$(
+            python3 scripts/change-classifier.py fingerprint
+          )
+          python3 scripts/build-manifest.py validate \
+            --bundle-dir release \
+            --repository "${GITHUB_REPOSITORY}" \
+            --source-commit "${GITHUB_SHA}" \
+            --material-fingerprint "${material_fingerprint}" \
+            --version "${TAG}" \
+            --workflow-path ".github/workflows/ci.yml" \
+            --workflow-run-id "${RELEASE_RUN_ID}"
+
+      - name: Verify every source-bound attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNER_WORKFLOW: proof-computer/liskov-runtime-images/.github/workflows/ci.yml
+        run: |
+          set -euo pipefail
+          for file in release/*; do
+            gh attestation verify "${file}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --source-digest "${GITHUB_SHA}" \
+              --signer-workflow "${SIGNER_WORKFLOW}"
+          done
+
+      - name: Publish unchanged qualified files
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           notes_file="${RUNNER_TEMP}/release-notes.md"
+          helper_version=$(jq -er '.helper.version' sources.lock.json)
           if [[ "${TAG}" == *-rc.* ]]; then
             debian_status="release candidate; promotion remains gated on the bounded Acurast A/B canary"
           else
@@ -137,9 +116,9 @@ jobs:
             echo
             echo "- \`debian-trixie\` is the ${debian_status}."
             echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
-            echo "- Every image embeds the exact Apache-2.0 \`liskov-runtime-contact\` v0.2.5 binary plus the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, checksums, and GitHub attestation."
+            echo "- Every image embeds the exact Apache-2.0 \`liskov-runtime-contact\` v${helper_version} binary plus the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, commit-bound build manifest, checksums, and GitHub attestation."
             echo
-            echo "Verify \`SHA256SUMS\` and the GitHub artifact attestation before use."
+            echo "Verify \`SHA256SUMS\`, \`BUILD-MANIFEST.json\`, and the GitHub artifact attestations before use."
           } > "${notes_file}"
 
           release_args=(

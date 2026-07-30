@@ -13,27 +13,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      targets-json: ${{ steps.classify.outputs.targets-json }}
+      material-fingerprint: ${{ steps.classify.outputs.material-fingerprint }}
+      release-version: ${{ steps.classify.outputs.release-version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+
+      - name: Classify governed changes
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/change-classifier.py classify \
+            --base "${BASE_SHA}" \
+            --head "${HEAD_SHA}" \
+            --github-output "${GITHUB_OUTPUT}"
+
   unit:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - name: Offline tests
+      - name: Unit, classifier, workflow-contract, and compile checks
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -v
           python3 -m compileall -q scripts tests
+          for script in scripts/*.sh; do
+            bash -n "${script}"
+          done
 
   image:
+    needs: [classify, unit]
+    if: github.event_name == 'push' && needs.classify.outputs.mode != 'fast'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     strategy:
       fail-fast: false
       matrix:
-        target: [v4-control, debian-trixie]
+        target: ${{ fromJSON(needs.classify.outputs.targets-json) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
@@ -53,22 +80,13 @@ jobs:
           sudo apt-get install --no-install-recommends --yes \
             binutils file gcc libc6-dev xz-utils
 
-      - name: Build twice from the locked materials
+      - name: Build and qualify target
         env:
+          MODE: ${{ needs.classify.outputs.mode }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          python3 scripts/build-image.py "${TARGET}" --output-dir out/a
-          python3 scripts/build-image.py "${TARGET}" --output-dir out/b
-          diff -qr out/a out/b
-
-      - name: Inspect and execute the helper on native AArch64
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          archive=$(find out/a -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
-          scripts/verify-native-aarch64.sh "${TARGET}" "${archive}"
+          scripts/build-qualified-target.sh "${MODE}" "${TARGET}" out
 
       - name: Compare OCI materialization with PRoot-Distro v5.5.0
         if: matrix.target == 'debian-trixie'
@@ -77,27 +95,22 @@ jobs:
           python3 scripts/verify-proot-distro-v5.py \
             --proot-distro-source .compat/proot-distro
 
-      - name: Attest exact outputs
-        if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
-        with:
-          subject-path: out/a/*
-
-      - name: Upload exact outputs
+      - name: Upload qualified target for QEMU/PRoot validation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: liskov-runtime-images-${{ matrix.target }}
+          name: qualified-${{ matrix.target }}-${{ github.sha }}
           path: out/a/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 2
 
   proot:
-    needs: image
+    needs: [classify, image]
+    if: github.event_name == 'push' && needs.classify.outputs.mode != 'fast'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        target: [v4-control, debian-trixie]
+        target: ${{ fromJSON(needs.classify.outputs.targets-json) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
@@ -110,7 +123,7 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: liskov-runtime-images-${{ matrix.target }}
+          name: qualified-${{ matrix.target }}-${{ github.sha }}
           path: smoke
 
       - name: Boot and smoke under QEMU/PRoot
@@ -121,3 +134,58 @@ jobs:
           set -euo pipefail
           archive=$(find smoke -maxdepth 1 -type f -name '*.tar.xz' -print -quit)
           scripts/smoke-rootfs.sh "${TARGET}" "${archive}"
+
+  package:
+    needs: [classify, image, proot]
+    if: github.event_name == 'push' && needs.classify.outputs.mode == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: qualified-*-${{ github.sha }}
+          path: release
+          merge-multiple: true
+
+      - name: Create and validate commit-bound release bundle
+        env:
+          MATERIAL_FINGERPRINT: ${{ needs.classify.outputs.material-fingerprint }}
+          RELEASE_VERSION: ${{ needs.classify.outputs.release-version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build-manifest.py create \
+            --bundle-dir release \
+            --repository "${GITHUB_REPOSITORY}" \
+            --source-commit "${GITHUB_SHA}" \
+            --material-fingerprint "${MATERIAL_FINGERPRINT}" \
+            --version "${RELEASE_VERSION}" \
+            --workflow-path ".github/workflows/ci.yml" \
+            --workflow-ref "${GITHUB_WORKFLOW_REF}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
+          python3 scripts/build-manifest.py validate \
+            --bundle-dir release \
+            --repository "${GITHUB_REPOSITORY}" \
+            --source-commit "${GITHUB_SHA}" \
+            --material-fingerprint "${MATERIAL_FINGERPRINT}" \
+            --version "${RELEASE_VERSION}" \
+            --workflow-path ".github/workflows/ci.yml" \
+            --workflow-run-id "${GITHUB_RUN_ID}"
+
+      - name: Attest every final release file
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: release/*
+
+      - name: Retain exact commit-bound release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-bundle-${{ github.sha }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 90

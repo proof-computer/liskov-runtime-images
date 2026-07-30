@@ -31,17 +31,23 @@ images curated for Liskov-managed Acurast Cargo/PRoot workloads.
 
 ## Validation
 
-Before every commit:
+Before every commit, run the change-aware local gate:
 
 ```sh
-python3 -m unittest discover -s tests -v
-python3 -m compileall -q scripts tests
-scripts/verify-reproducible.sh v4-control
-scripts/verify-reproducible.sh debian-trixie
+scripts/validate-change.sh
 ```
 
-The GitHub ARM64 job additionally runs `scripts/verify-native-aarch64.sh` and
-executes the embedded helper on the native architecture. A separate x86_64 job
-boots the exact artifact through QEMU/PRoot with `scripts/smoke-rootfs.sh` and
-exercises abstract bridge-socket access. Live Acurast canaries are explicit,
-bounded release gates; they are not ordinary tests.
+Every change runs unit, classifier, workflow-contract, shell-syntax, and Python
+compile checks. A material local change constructs each affected target once.
+Use `scripts/verify-reproducible.sh <target>` only for release troubleshooting;
+the authoritative two-clean-build proof runs once in native ARM64 release CI.
+
+Material CI constructs each affected target once, runs
+`scripts/verify-native-aarch64.sh`, and validates the exact archive through
+QEMU/PRoot. A commit that updates a valid `release-intent.json` constructs each
+target twice in fresh trees, compares every output byte, passes the same native
+and QEMU/PRoot gates, and emits the commit-bound attested release bundle. Tag
+publication must only promote that bundle; it never constructs an image.
+
+Live Acurast canaries are explicit, bounded release gates; they are not
+ordinary tests and must not be dispatched merely to validate CI plumbing.
