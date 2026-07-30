@@ -139,7 +139,7 @@ class CanaryContractTests(unittest.TestCase):
                 "mode": "static",
                 "managerId": "9470",
                 "processorIds": [
-                    "5DdnAmQqFoUhPgDRzvus9LCkLg8hTzBPBe4H6LUMjvJj22AG"
+                    "5GVDVUf3KSTiT9YPD7Y7KudK9QKY2msQSjQgTEpT1A1JuhS6"
                 ],
                 "requireScheduleClear": True,
                 "requireConsumerAccess": True,
