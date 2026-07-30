@@ -227,6 +227,37 @@ class CanaryContractTests(unittest.TestCase):
                 workflow,
             )
 
+    def test_debian_seed_is_pinned_to_the_canaried_v4_control(self) -> None:
+        seed = self.load_manifest("canary-debian-trixie-seed.json")
+
+        self.assertEqual(seed["applicationId"], "liskov-runtime-images-v5-canary")
+        self.assertEqual(
+            seed["release"],
+            {
+                "mode": "pinned",
+                "artifact": {
+                    "kind": "runtime_image",
+                    "imageDigest": (
+                        "sha256:"
+                        "c662589dc69eff96cb596a9b24cbff270004f502f4ee6357de64035b970d5153"
+                    ),
+                    "bootstrapCid": (
+                        "ipfs://Qme4XZrLSTEvsDqn7FnYoX35ZCQhB8GSx3cbiVkSdkyRxN"
+                    ),
+                    "bootstrapDigest": (
+                        "sha256:"
+                        "a7de2388f5d0760c4357c104f83d7a0edbf9028a9350817fd51572db70014262"
+                    ),
+                },
+            },
+        )
+        self.assertEqual(seed["runtime"]["maxGenerations"], 1)
+        self.assertEqual(seed["runtime"]["resources"]["networkRequestQuota"], 0)
+        self.assertEqual(
+            seed["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"],
+            0,
+        )
+
 
 class ExtractionTests(unittest.TestCase):
     def write_tar(self, path: Path, entries: list[tuple[str, bytes]]) -> None:
