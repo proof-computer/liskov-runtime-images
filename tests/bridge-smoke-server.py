@@ -60,12 +60,17 @@ def main() -> int:
                 "signer_sign": {"bytes": "11" * 64},
             }
             if args.probe:
-                if len(methods) == 1 and request.get("id") != "1":
-                    raise RuntimeError("probe did not use the documented short request id")
-                if len(methods) == 2 and not str(request.get("id", "")).startswith(
-                    "liskov-runtime-contact-"
-                ):
-                    raise RuntimeError("probe did not compare the long request id")
+                processor_version_count = methods.count("processor_version")
+                if method == "processor_version" and processor_version_count == 1:
+                    if request.get("id") != "1":
+                        raise RuntimeError(
+                            "probe did not use the documented short request id"
+                        )
+                if method == "processor_version" and processor_version_count == 2:
+                    if not str(request.get("id", "")).startswith(
+                        "liskov-runtime-contact-"
+                    ):
+                        raise RuntimeError("probe did not compare the long request id")
             response = {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
