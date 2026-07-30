@@ -228,7 +228,7 @@ class CanaryContractTests(unittest.TestCase):
             )
 
     def test_debian_seed_is_pinned_to_the_canaried_v4_control(self) -> None:
-        seed = self.load_manifest("canary-debian-trixie-seed.json")
+        seed = self.load_manifest("liskov-runtime-images-v5-canary.policy.json")
 
         self.assertEqual(seed["applicationId"], "liskov-runtime-images-v5-canary")
         self.assertEqual(
