@@ -10,7 +10,8 @@
       "runtime-image",
       "canary",
       "v4-control",
-      "bridge-probe"
+      "bridge-probe",
+      "reward-encoding-repair"
     ]
   },
   "release": {
