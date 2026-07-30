@@ -34,10 +34,10 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["supportStatus"],
             "release-candidate",
         )
-        self.assertEqual(lock["helper"]["version"], "0.2.2")
+        self.assertEqual(lock["helper"]["version"], "0.2.3")
         self.assertEqual(
             lock["helper"]["releaseCommit"],
-            "74155594171460f85a5f886807749d00bed734bb",
+            "dd092b782cffa2f199bf24bcc1b34a6ec8c2d7fd",
         )
         for digest in (
             lock["helper"]["archiveSha256"],
@@ -158,6 +158,9 @@ class CanaryContractTests(unittest.TestCase):
                 "liskov-runtime-contact",
                 manifest["runtime"]["command"],
             )
+        self.assertTrue(probe["observability"]["logs"]["enabled"])
+        for manifest in (v4, debian):
+            self.assertFalse(manifest["observability"]["logs"]["enabled"])
 
     def test_canary_workflows_pin_the_verified_rc5_archives(self) -> None:
         expected = {

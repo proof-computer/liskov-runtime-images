@@ -137,7 +137,7 @@ jobs:
             echo
             echo "- \`debian-trixie\` is the ${debian_status}."
             echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
-            echo "- Every image embeds the exact Apache-2.0 \`liskov-runtime-contact\` v0.2.2 binary plus the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, checksums, and GitHub attestation."
+            echo "- Every image embeds the exact Apache-2.0 \`liskov-runtime-contact\` v0.2.3 binary plus the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, checksums, and GitHub attestation."
             echo
             echo "Verify \`SHA256SUMS\` and the GitHub artifact attestation before use."
           } > "${notes_file}"

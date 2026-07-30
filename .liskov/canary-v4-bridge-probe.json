@@ -95,7 +95,7 @@
   "ingress": {},
   "observability": {
     "logs": {
-      "enabled": false
+      "enabled": true
     },
     "runtimeDiagnostics": {
       "signed": true
