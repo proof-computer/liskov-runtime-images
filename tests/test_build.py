@@ -136,11 +136,8 @@ class CanaryContractTests(unittest.TestCase):
         self.assertEqual(
             probe["deployment"]["placement"]["processorSelection"],
             {
-                "mode": "static",
+                "mode": "manager",
                 "managerId": "9470",
-                "processorIds": [
-                    "5GVDVUf3KSTiT9YPD7Y7KudK9QKY2msQSjQgTEpT1A1JuhS6"
-                ],
                 "requireScheduleClear": True,
                 "requireConsumerAccess": True,
                 "candidateLimit": 16,
