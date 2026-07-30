@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  attestations: read
   contents: read
   id-token: write
 
@@ -15,3 +16,6 @@ jobs:
       manifest-path: .liskov/canary-v4-control.json
       image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.8/liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz
       expected-sha256: ef541b0db00fccaa0420617def585afcd049bd526ba2479d081126c15d66b48e
+      attestation-repository: proof-computer/liskov-runtime-images
+      attestation-source-digest: 1733834e327d5a7aa6f05eb013d998ac88b8b5b3
+      attestation-signer-workflow: proof-computer/liskov-runtime-images/.github/workflows/ci.yml

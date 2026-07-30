@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  attestations: read
   contents: read
   id-token: write
 
@@ -15,3 +16,6 @@ jobs:
       manifest-path: .liskov/canary-debian-trixie.json
       image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.8/liskov-runtime-image-debian-trixie-aarch64.tar.xz
       expected-sha256: 47ff16fc4b16d9c9b6fdcc43f37362b1a9cf0b64244a60f9c32ff2ee5004ea09
+      attestation-repository: proof-computer/liskov-runtime-images
+      attestation-source-digest: 1733834e327d5a7aa6f05eb013d998ac88b8b5b3
+      attestation-signer-workflow: proof-computer/liskov-runtime-images/.github/workflows/ci.yml

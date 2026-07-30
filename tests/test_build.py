@@ -207,6 +207,21 @@ class CanaryContractTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn(f"/v0.1.0-rc.8/{archive}", workflow)
             self.assertIn(f"expected-sha256: {digest}", workflow)
+            self.assertIn("attestations: read", workflow)
+            self.assertIn(
+                "attestation-repository: proof-computer/liskov-runtime-images",
+                workflow,
+            )
+            self.assertIn(
+                "attestation-source-digest: "
+                "1733834e327d5a7aa6f05eb013d998ac88b8b5b3",
+                workflow,
+            )
+            self.assertIn(
+                "attestation-signer-workflow: "
+                "proof-computer/liskov-runtime-images/.github/workflows/ci.yml",
+                workflow,
+            )
 
 
 class ExtractionTests(unittest.TestCase):
