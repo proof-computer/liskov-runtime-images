@@ -25,7 +25,7 @@ def main() -> int:
     args.ready_file.write_text("ready\n", encoding="utf-8")
 
     methods: list[str] = []
-    request_count = 11 if args.probe else (4 if args.valid_identity else 1)
+    request_count = 12 if args.probe else (4 if args.valid_identity else 1)
     public_key = "ab" * 32
     for _ in range(request_count):
         connection, _ = server.accept()
