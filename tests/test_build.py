@@ -133,6 +133,19 @@ class CanaryContractTests(unittest.TestCase):
             probe["runtime"]["command"],
             "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
         )
+        self.assertEqual(
+            probe["deployment"]["placement"]["processorSelection"],
+            {
+                "mode": "static",
+                "managerId": "9470",
+                "processorIds": [
+                    "5FXyxJCcv66KeNHWzCkgaQ1EJ3kkobRX6yPSJW7mnyY8DdRQ"
+                ],
+                "requireScheduleClear": True,
+                "requireConsumerAccess": True,
+                "candidateLimit": 16,
+            },
+        )
         for manifest in (probe, v4, debian):
             self.assertEqual(manifest["runtime"]["maxGenerations"], 1)
             self.assertEqual(
