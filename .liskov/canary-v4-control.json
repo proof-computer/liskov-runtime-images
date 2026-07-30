@@ -29,6 +29,7 @@
   },
   "runtime": {
     "command": "/bin/sh -c 'echo liskov-runtime-images-v4-control-handoff; exec sleep 420'",
+    "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {
       "memoryMiB": 128,

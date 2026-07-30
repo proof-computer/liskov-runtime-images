@@ -134,6 +134,7 @@ class CanaryContractTests(unittest.TestCase):
             "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
         )
         for manifest in (probe, v4, debian):
+            self.assertEqual(manifest["runtime"]["maxGenerations"], 1)
             self.assertEqual(
                 manifest["deployment"]["schedule"],
                 {
