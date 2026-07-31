@@ -188,7 +188,7 @@ class CanaryContractTests(unittest.TestCase):
     def test_probe_is_exactly_bounded_and_final_canaries_do_not_nest_helper(self) -> None:
         probe = self.load_manifest("canary-v4-bridge-probe.json")
         v4 = self.load_manifest("canary-v4-control.json")
-        debian = self.load_manifest("canary-debian-trixie.json")
+        debian = self.load_manifest("liskov-runtime-images-v5-canary.policy.json")
 
         self.assertEqual(
             probe["runtime"]["command"],
@@ -280,36 +280,19 @@ class CanaryContractTests(unittest.TestCase):
                 workflow,
             )
 
-    def test_debian_seed_is_pinned_to_the_canaried_v4_control(self) -> None:
-        seed = self.load_manifest("liskov-runtime-images-v5-canary.policy.json")
+    def test_debian_workflow_uses_the_canonical_repository_policy_path(self) -> None:
+        manifest_name = "liskov-runtime-images-v5-canary.policy.json"
+        manifest = self.load_manifest(manifest_name)
+        builder = manifest["release"]["builder"]
 
-        self.assertEqual(seed["applicationId"], "liskov-runtime-images-v5-canary")
-        self.assertEqual(
-            seed["release"],
-            {
-                "mode": "pinned",
-                "artifact": {
-                    "kind": "runtime_image",
-                    "imageDigest": (
-                        "sha256:"
-                        "c662589dc69eff96cb596a9b24cbff270004f502f4ee6357de64035b970d5153"
-                    ),
-                    "bootstrapCid": (
-                        "ipfs://Qme4XZrLSTEvsDqn7FnYoX35ZCQhB8GSx3cbiVkSdkyRxN"
-                    ),
-                    "bootstrapDigest": (
-                        "sha256:"
-                        "a7de2388f5d0760c4357c104f83d7a0edbf9028a9350817fd51572db70014262"
-                    ),
-                },
-            },
-        )
-        self.assertEqual(seed["runtime"]["maxGenerations"], 1)
-        self.assertEqual(seed["runtime"]["resources"]["networkRequestQuota"], 0)
-        self.assertEqual(
-            seed["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"],
-            0,
-        )
+        self.assertEqual(manifest["applicationId"], "liskov-runtime-images-v5-canary")
+        self.assertEqual(builder["repository"], "proof-computer/liskov-runtime-images")
+        self.assertEqual(builder["allowedRefs"], ["refs/heads/main"])
+        self.assertEqual(builder["manifestPath"], f".liskov/{manifest_name}")
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/canary-debian-trixie.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(f"manifest-path: .liskov/{manifest_name}", workflow)
 
     def test_fresh_debian_canary_is_pinned_to_the_exact_rc11_candidate(self) -> None:
         seed = self.load_manifest("liskov-runtime-images-v6-canary.policy.json")

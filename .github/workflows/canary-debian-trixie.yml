@@ -13,7 +13,7 @@ jobs:
     uses: proof-computer/liskov-github-actions/.github/workflows/runtime-image.yml@v1
     with:
       application-id: liskov-runtime-images-v5-canary
-      manifest-path: .liskov/canary-debian-trixie.json
+      manifest-path: .liskov/liskov-runtime-images-v5-canary.policy.json
       image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.12/liskov-runtime-image-debian-trixie-aarch64.tar.xz
       expected-sha256: 0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377
       attestation-repository: proof-computer/liskov-runtime-images
