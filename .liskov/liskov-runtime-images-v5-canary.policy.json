@@ -15,22 +15,16 @@
     ]
   },
   "release": {
-    "mode": "build",
+    "mode": "pinned",
     "artifact": {
-      "kind": "runtime_image"
-    },
-    "builder": {
-      "kind": "github",
-      "repository": "proof-computer/liskov-runtime-images",
-      "allowedRefs": [
-        "refs/heads/main"
-      ],
-      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-debian-trixie.yml@refs/heads/main",
-      "manifestPath": ".liskov/liskov-runtime-images-v5-canary.policy.json"
+      "kind": "runtime_image",
+      "imageDigest": "sha256:0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377",
+      "bootstrapCid": "ipfs://QmaKDyYkqrMRjZZy4Nh6g9Z9AcaiZ84NkqRvPRp8W7jvpF",
+      "bootstrapDigest": "sha256:ed37d63722ee734a5ff5c9466ef0454b610ab4a27e5ff1dceafc7d634267aeab"
     }
   },
   "runtime": {
-    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-helperless-rc12-approved-retry-handoff; exec sleep 420'",
+    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-helperless-rc12-final-handoff; exec sleep 420'",
     "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {

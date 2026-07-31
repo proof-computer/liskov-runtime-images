@@ -283,12 +283,22 @@ class CanaryContractTests(unittest.TestCase):
     def test_debian_workflow_uses_the_canonical_repository_policy_path(self) -> None:
         manifest_name = "liskov-runtime-images-v5-canary.policy.json"
         manifest = self.load_manifest(manifest_name)
-        builder = manifest["release"]["builder"]
 
         self.assertEqual(manifest["applicationId"], "liskov-runtime-images-v5-canary")
-        self.assertEqual(builder["repository"], "proof-computer/liskov-runtime-images")
-        self.assertEqual(builder["allowedRefs"], ["refs/heads/main"])
-        self.assertEqual(builder["manifestPath"], f".liskov/{manifest_name}")
+        release = manifest["release"]
+        if release["mode"] == "build":
+            builder = release["builder"]
+            self.assertEqual(
+                builder["repository"], "proof-computer/liskov-runtime-images"
+            )
+            self.assertEqual(builder["allowedRefs"], ["refs/heads/main"])
+            self.assertEqual(builder["manifestPath"], f".liskov/{manifest_name}")
+        else:
+            self.assertEqual(release["mode"], "pinned")
+            self.assertEqual(
+                release["artifact"]["imageDigest"],
+                "sha256:0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377",
+            )
         workflow = (
             REPOSITORY_ROOT / ".github/workflows/canary-debian-trixie.yml"
         ).read_text(encoding="utf-8")
