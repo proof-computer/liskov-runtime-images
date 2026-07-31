@@ -30,7 +30,7 @@
     }
   },
   "runtime": {
-    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-handoff; exec sleep 420'",
+    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-helperless-rc12-handoff; exec sleep 420'",
     "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {
