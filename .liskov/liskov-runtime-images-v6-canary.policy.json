@@ -1,0 +1,100 @@
+{
+  "schema": "proof.liskov.application-manifest",
+  "schemaVersion": 4,
+  "applicationId": "liskov-runtime-images-v6-canary",
+  "metadata": {
+    "appType": "background-worker",
+    "description": "Fresh, bounded Acurast canary pinned to the exact RC11 Debian Trixie candidate bytes after the v5 pre-chain schedule-overlap attempt.",
+    "labels": [
+      "liskov",
+      "runtime-image",
+      "canary",
+      "debian-trixie",
+      "proot-v5-compatible"
+    ]
+  },
+  "release": {
+    "mode": "pinned",
+    "artifact": {
+      "kind": "runtime_image",
+      "imageDigest": "sha256:97523a10978903fe63bb0df55fc0be411a137a101d2697a3d866c2abb1a0ddf4",
+      "bootstrapCid": "ipfs://Qmet3Lch34ZHrHeRZyKgRv2ghdgsL6f12gvaGowsTDG4We",
+      "bootstrapDigest": "sha256:51f888cb07a1ff5e4dc8797bf277ade9c7017ade2b33f12bdb930940fe065fd4"
+    }
+  },
+  "runtime": {
+    "command": "/bin/sh -c 'echo liskov-runtime-images-debian-trixie-handoff; exec sleep 420'",
+    "maxGenerations": 1,
+    "role": "runtime-image-canary",
+    "resources": {
+      "memoryMiB": 128,
+      "storageMiB": 256,
+      "networkRequestQuota": 0
+    },
+    "requiredModules": [
+      "Shell"
+    ],
+    "bootstrap": {
+      "trustProfile": "proof.liskov.attested-runtime.v1",
+      "signedDiagnosticsRequired": true,
+      "identityBoundSecretsRequired": true
+    }
+  },
+  "deployment": {
+    "parallelism": 1,
+    "schedule": {
+      "durationMs": 900000,
+      "startDelayMs": 300000,
+      "maxStartDelayMs": 300000
+    },
+    "placement": {
+      "requirements": {
+        "trustProfile": "proof.liskov.attested-runtime.v1"
+      },
+      "processorSelection": {
+        "mode": "manager",
+        "managerId": "9470",
+        "requireScheduleClear": true,
+        "requireConsumerAccess": true,
+        "candidateLimit": 16
+      }
+    },
+    "lifecycle": {
+      "renewal": {
+        "mode": "before_scheduled_end",
+        "leadTime": {
+          "mode": "fixed",
+          "durationMs": 60000
+        }
+      },
+      "update": {
+        "timing": "immediate",
+        "existingJobs": {
+          "mode": "run_until_scheduled_end"
+        }
+      },
+      "recovery": {
+        "launch": {
+          "maxRetries": 0
+        },
+        "runtimeFailure": {
+          "mode": "wait_until_scheduled_end"
+        }
+      }
+    },
+    "spend": {
+      "maxRewardPlanckPerJob": "40000000000",
+      "maxNativeFeePlanckPerJob": "10000000000"
+    }
+  },
+  "ingress": {},
+  "observability": {
+    "logs": {
+      "enabled": false
+    },
+    "runtimeDiagnostics": {
+      "signed": true
+    }
+  },
+  "configuration": {}
+}
