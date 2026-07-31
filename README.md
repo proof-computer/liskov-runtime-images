@@ -14,7 +14,7 @@ snapshots one verified helper beside the generated `acurast.sh` launch bundle.
 
 | Target | Upstream trust root | Status |
 | --- | --- | --- |
-| `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | Release candidate; intended maintained default after its Acurast canary |
+| `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | Maintained default; exact `v0.1.0-rc.12` bytes promoted after the bounded Acurast A/B canary |
 | `v4-control` | Exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64 release asset | Compatibility control only |
 
 Acurast consumes an image URL and SHA-256, not a PRoot-Distro major version.
@@ -172,6 +172,15 @@ Successful local and CI smoke tests are necessary but not sufficient for
 support. A release candidate becomes the maintained default only after a
 bounded Acurast A/B canary: v4 control first, then the OCI-derived candidate,
 with signed Liskov runtime contact and downstream command execution observed.
+
+The maintained default is the helperless Debian archive from
+`v0.1.0-rc.12`, SHA-256
+`0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377`.
+It was promoted without rebuilding after both exact release lanes crossed
+signed runtime contact, customer-command handoff, and finalized Acurast
+execution success. The release tag remains `v0.1.0-rc.12` because its checked
+build manifest, checksums, and attestations are version-bound; the GitHub
+release status and this pointer carry the maintained-default classification.
 
 ## Updating inputs
 
