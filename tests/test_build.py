@@ -243,26 +243,26 @@ class CanaryContractTests(unittest.TestCase):
         for manifest in (v4, debian):
             self.assertFalse(manifest["observability"]["logs"]["enabled"])
 
-    def test_canary_workflows_pin_the_verified_rc11_archives(self) -> None:
+    def test_canary_workflows_pin_the_verified_rc12_archives(self) -> None:
         expected = {
             "canary-v4-bridge-probe.yml": (
                 "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
-                "c662589dc69eff96cb596a9b24cbff270004f502f4ee6357de64035b970d5153",
+                "ae230e74fb871e33f9eabc19eee9370bb2b36fc3622cc97bf08ed1c5e87e59ca",
             ),
             "canary-v4-control.yml": (
                 "liskov-runtime-image-v4-control-ubuntu-questing-aarch64.tar.xz",
-                "c662589dc69eff96cb596a9b24cbff270004f502f4ee6357de64035b970d5153",
+                "ae230e74fb871e33f9eabc19eee9370bb2b36fc3622cc97bf08ed1c5e87e59ca",
             ),
             "canary-debian-trixie.yml": (
                 "liskov-runtime-image-debian-trixie-aarch64.tar.xz",
-                "97523a10978903fe63bb0df55fc0be411a137a101d2697a3d866c2abb1a0ddf4",
+                "0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377",
             ),
         }
         for workflow_name, (archive, digest) in expected.items():
             workflow = (
                 REPOSITORY_ROOT / ".github" / "workflows" / workflow_name
             ).read_text(encoding="utf-8")
-            self.assertIn(f"/v0.1.0-rc.11/{archive}", workflow)
+            self.assertIn(f"/v0.1.0-rc.12/{archive}", workflow)
             self.assertIn(f"expected-sha256: {digest}", workflow)
             self.assertIn("attestations: read", workflow)
             self.assertIn(
@@ -271,7 +271,7 @@ class CanaryContractTests(unittest.TestCase):
             )
             self.assertIn(
                 "attestation-source-digest: "
-                "324c6f8b756c26fedb3fdf24463818d629203e78",
+                "d3a7b61e7e2acb2e2f686c6fc1379d2ee74ea582",
                 workflow,
             )
             self.assertIn(
