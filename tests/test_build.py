@@ -292,9 +292,9 @@ class CanaryContractTests(unittest.TestCase):
     def test_targeted_debian_canary_uses_a_schedule_clear_contacted_processor(
         self,
     ) -> None:
-        seed = self.load_manifest("liskov-runtime-images-v7-canary.policy.json")
+        seed = self.load_manifest("liskov-runtime-images-v8-canary.policy.json")
 
-        self.assertEqual(seed["applicationId"], "liskov-runtime-images-v7-canary")
+        self.assertEqual(seed["applicationId"], "liskov-runtime-images-v8-canary")
         self.assertEqual(
             seed["release"]["artifact"],
             {
