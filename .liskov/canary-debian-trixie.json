@@ -10,6 +10,7 @@
       "runtime-image",
       "canary",
       "debian-trixie",
+      "helperless-rc12",
       "proot-v5-compatible"
     ]
   },
