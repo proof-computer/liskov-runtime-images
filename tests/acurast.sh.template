@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -r '/usr/local/lib/libgetifaddrs_override.so' ]; then
+  LD_PRELOAD='/usr/local/lib/libgetifaddrs_override.so'
+  export LD_PRELOAD
+fi
+chmod 0755 "$script_dir/liskov-runtime-contact"
+exec "$script_dir/liskov-runtime-contact" --diagnostic-exit-codes@BRIDGE_PROBE_ARGUMENT@ --core-url 'https://example.com' -- /bin/sh -lc '/bin/true'

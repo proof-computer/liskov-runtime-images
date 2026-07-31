@@ -12,8 +12,10 @@ The maintained candidate starts from the exact Debian Trixie slim AArch64 OCI
 manifest recorded in `sources.lock.json`. Debian packages retain their
 respective licenses.
 
-The overlaid `liskov-runtime-contact` binary and its accompanying license are
-published by `proof-computer/liskov-runtime-cargo` under Apache-2.0.
+Published rootfs images do not contain `liskov-runtime-contact` or its license.
+Smoke validation fetches one digest-pinned release from
+`proof-computer/liskov-runtime-cargo` under Apache-2.0 and injects it only into
+an ephemeral test root.
 
 Each release includes an SPDX SBOM and an exact source/overlay provenance
 record. The files installed by Debian and Ubuntu contain the authoritative

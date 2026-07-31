@@ -39,24 +39,10 @@ import json, pathlib, sys
 lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
 print(lock["images"][sys.argv[2]]["archiveRoot"])
 ' "${repository_root}/sources.lock.json" "${target}")
-expected_helper_version=$(python3 -c '
-import json, pathlib, sys
-lock = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
-print(lock["helper"]["version"])
-' "${repository_root}/sources.lock.json")
 tar -xJf "${archive}" -C "${verification_root}" \
-  "${root_name}/usr/local/bin/liskov-runtime-contact" \
   "${root_name}/usr/local/lib/libgetifaddrs_override.so"
-helper="${verification_root}/${root_name}/usr/local/bin/liskov-runtime-contact"
 shim="${verification_root}/${root_name}/usr/local/lib/libgetifaddrs_override.so"
 
-file "${helper}" | grep -Eq 'ARM aarch64|ARM64'
-file "${helper}" | grep -q 'statically linked'
-readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
-if readelf -l "${helper}" | grep -q 'interpreter'; then
-  echo "embedded helper unexpectedly requests a dynamic interpreter" >&2
-  exit 1
-fi
 file "${shim}" | grep -Eq 'ARM aarch64|ARM64'
 file "${shim}" | grep -q 'shared object'
 readelf -h "${shim}" | grep -q 'Type:.*DYN'
@@ -111,11 +97,5 @@ try:
 finally:
     process.freeifaddrs(head)
 PY
-
-version=$("${helper}" --version)
-if [[ "${version}" != "liskov-runtime-contact ${expected_helper_version}" ]]; then
-  echo "unexpected embedded helper version: ${version}" >&2
-  exit 1
-fi
 
 echo "native AArch64 verification passed: ${target}"

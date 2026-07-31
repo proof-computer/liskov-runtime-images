@@ -5,9 +5,10 @@ Cargo/PRoot workloads.
 
 This repository makes the complete image transformation public. Every release
 starts from immutable upstream bytes, verifies every source digest before
-extraction, overlays the released static `liskov-runtime-contact` helper and
-the loopback-only Acurast `getifaddrs` compatibility shim, and emits a
-deterministic plain `tar.xz` rootfs accepted by Acurast Cargo.
+extraction, overlays the loopback-only Acurast `getifaddrs` compatibility shim,
+and emits a deterministic plain `tar.xz` rootfs accepted by Acurast Cargo.
+Runtime images deliberately contain no `liskov-runtime-contact` helper; Liskov
+snapshots one verified helper beside the generated `acurast.sh` launch bundle.
 
 ## Image tracks
 
@@ -32,22 +33,18 @@ a newer OCI-rootfs problem.
 The base filesystem receives exactly these Liskov-owned paths:
 
 ```text
-/usr/local/bin/liskov-runtime-contact
 /usr/local/lib/libgetifaddrs_override.so
-/usr/share/doc/liskov-runtime-contact/LICENSE
 /usr/share/liskov-runtime-images/getifaddrs_override.c
 /usr/share/liskov-runtime-images/provenance.json
 ```
 
-The helper is the exact static AArch64 release binary from
-[`proof-computer/liskov-runtime-cargo`](https://github.com/proof-computer/liskov-runtime-cargo).
 The Apache-2.0 shim is compiled deterministically from the included source and
 implements the loopback-only workaround documented for Cargo/PRoot by
 [Acurast](https://docs.acurast.com/developers/build/cargo-runtime-environment/#network-interfaces-getifaddrs).
 Liskov's bootstrap exports it through `LD_PRELOAD` only when the verified
 library is present in the rootfs.
 The embedded provenance record identifies the upstream material, base
-inventory, helper release, and deterministic archive policy. Numeric ownership,
+inventory, shim source and binary, and deterministic archive policy. Numeric ownership,
 timestamps, member order, and compression are normalized and declared
 separately from the filesystem overlay.
 
@@ -81,7 +78,7 @@ SHA256SUMS
 
 `files.json` inventories every archive member, including symlinks, hardlinks,
 device metadata, and extended-attribute digests. `overlay.json` isolates the
-five declared additions. `BUILD-MANIFEST.json` binds the repository, source
+three declared additions. `BUILD-MANIFEST.json` binds the repository, source
 commit, release version, material-input fingerprint, complete target/file set,
 sizes, digests, and qualifying workflow run. GitHub's artifact attestations
 bind every final file to that public CI workflow and source commit.
@@ -144,19 +141,23 @@ CI has three fail-closed modes:
 Material and release CI then:
 
 - compares every output byte-for-byte in release mode;
-- executes the embedded static helper directly on the native ARM64 host;
 - compares the locked OCI layer materialization with the exact PRoot-Distro
   v5.5.0 extractor at commit `0b2a3aa8dd88cd83f2cf681836c66f7bc6b22d26`;
 - checks the single root directory and canonical metadata;
-- verifies the embedded helper SHA-256, AArch64 ELF machine, static linkage,
-  and lack of a dynamic interpreter;
+- rejects the removed helper and license paths, including symlink and hard-link
+  aliases;
 - validates the shim's AArch64 shared-object shape, exported functions,
   loopback-only result, source digest, and provenance binding;
 - boots the exact uploaded artifact under QEMU/PRoot in a separate job;
 - resolves the production Liskov hostname;
 - proves abstract Unix bridge-socket access and fail-closed exit status;
-- exercises the static helper's bundled-root HTTPS path from the Debian image
-  without installing a rootfs CA bundle or client;
+- downloads one exact released helper as test-only material, verifies its
+  digest, size, AArch64 ELF machine, static linkage, and lack of a dynamic
+  interpreter, then injects it beside a production-shaped generated
+  `acurast.sh` in an ephemeral smoke root;
+- exercises that generated launcher through bridge, conditional preload,
+  bundled-root HTTPS, bridge-probe, and downstream-command handoff paths
+  without adding the helper to a published rootfs;
 - in release mode, packages checksums, metadata, `BUILD-MANIFEST.json`, and
   GitHub build attestations into a commit-named bundle retained for 90 days.
 
@@ -174,7 +175,7 @@ with signed Liskov runtime contact and downstream command execution observed.
 
 ## Updating inputs
 
-Changing any upstream image, helper version, manifest, config, or layer digest
+Changing any upstream image, manifest, config, or layer digest
 requires:
 
 1. updating `sources.lock.json`;

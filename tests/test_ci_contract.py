@@ -76,7 +76,9 @@ class ChangeClassifierTests(unittest.TestCase):
             "assets/getifaddrs_override.c",
             "scripts/build-image.py",
             "scripts/verify-native-aarch64.sh",
+            "tests/acurast.sh.template",
             "tests/bridge-smoke-server.py",
+            "tests/runtime-contact-release.json",
             "unexpected/new-input.txt",
         ]
         for path in material_paths:

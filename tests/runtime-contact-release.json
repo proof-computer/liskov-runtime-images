@@ -1,0 +1,13 @@
+{
+  "schema": "proof.liskov.runtime-image.test-helper-release",
+  "schemaVersion": 1,
+  "tag": "v0.2.10",
+  "version": "0.2.10",
+  "sourceCommit": "ea86124dd3df4e336f2cc49889c1bc5310eee299",
+  "target": "aarch64-unknown-linux-musl",
+  "binary": {
+    "url": "https://github.com/proof-computer/liskov-runtime-cargo/releases/download/v0.2.10/liskov-runtime-contact-v0.2.10-aarch64-unknown-linux-musl",
+    "sha256": "101bad2b97a2dfe343536afc313603d857894669e631ad2b224cf953a82f1d1a",
+    "byteSize": 2426680
+  }
+}

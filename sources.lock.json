@@ -7,17 +7,6 @@
     "repository": "https://github.com/termux/proot-distro",
     "role": "compatibility-reference"
   },
-  "helper": {
-    "version": "0.2.9",
-    "releaseCommit": "0bfbde8041e6597fc6730334ec16e2d370ae3256",
-    "archiveUrl": "https://github.com/proof-computer/liskov-runtime-cargo/releases/download/v0.2.9/liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl.tar.gz",
-    "archiveSha256": "d8f7fe7bae05c17733667d5db7a920ca509ab712b1aab733699ae2e44848a122",
-    "archiveSize": 1317413,
-    "binarySha256": "7cb01b423735b870c66f38400c9c429ac843b45569d3fa67d1e00c8442400595",
-    "binarySize": 2426680,
-    "binaryPath": "liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl/liskov-runtime-contact",
-    "licensePath": "liskov-runtime-contact-v0.2.9-aarch64-unknown-linux-musl/LICENSE"
-  },
   "images": {
     "v4-control": {
       "kind": "termux-rootfs",

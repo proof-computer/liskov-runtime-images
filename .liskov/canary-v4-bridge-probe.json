@@ -30,7 +30,7 @@
     }
   },
   "runtime": {
-    "command": "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
+    "command": "/bin/true",
     "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {

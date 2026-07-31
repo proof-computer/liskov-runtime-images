@@ -25,16 +25,12 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = REPOSITORY_ROOT / "sources.lock.json"
 GETIFADDRS_OVERRIDE_SOURCE = REPOSITORY_ROOT / "assets/getifaddrs_override.c"
-HELPER_PATH = "usr/local/bin/liskov-runtime-contact"
-HELPER_LICENSE_PATH = "usr/share/doc/liskov-runtime-contact/LICENSE"
 GETIFADDRS_OVERRIDE_LIBRARY_PATH = "usr/local/lib/libgetifaddrs_override.so"
 GETIFADDRS_OVERRIDE_SOURCE_PATH = (
     "usr/share/liskov-runtime-images/getifaddrs_override.c"
 )
 PROVENANCE_PATH = "usr/share/liskov-runtime-images/provenance.json"
 OVERLAY_PATHS = (
-    HELPER_PATH,
-    HELPER_LICENSE_PATH,
     GETIFADDRS_OVERRIDE_LIBRARY_PATH,
     GETIFADDRS_OVERRIDE_SOURCE_PATH,
     PROVENANCE_PATH,
@@ -630,7 +626,6 @@ def parse_dpkg_status(root: Path) -> list[dict[str, str]]:
 def spdx_document(
     target: str,
     image: dict[str, Any],
-    helper: dict[str, Any],
     getifaddrs_override_sha256: str,
     root: Path,
     final_inventory_digest: str,
@@ -698,30 +693,6 @@ def spdx_document(
                 "relatedSpdxElement": package_id,
             }
         )
-    helper_id = "SPDXRef-Package-Liskov-Runtime-Contact"
-    packages.append(
-        {
-            "SPDXID": helper_id,
-            "name": "liskov-runtime-contact",
-            "versionInfo": helper["version"],
-            "downloadLocation": helper["archiveUrl"],
-            "filesAnalyzed": False,
-            "checksums": [
-                {"algorithm": "SHA256", "checksumValue": helper["binarySha256"]}
-            ],
-            "licenseConcluded": "Apache-2.0",
-            "licenseDeclared": "Apache-2.0",
-            "copyrightText": "NOASSERTION",
-            "supplier": "Organization: PROOF Computer",
-        }
-    )
-    relationships.append(
-        {
-            "spdxElementId": image_spdx_id,
-            "relationshipType": "CONTAINS",
-            "relatedSpdxElement": helper_id,
-        }
-    )
     shim_id = "SPDXRef-Package-Liskov-Getifaddrs-Override"
     packages.append(
         {
@@ -958,21 +929,8 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
     if not isinstance(images, dict) or target not in images:
         raise BuildError(f"unknown target {target!r}; expected one of {sorted(images or {})}")
     image = images[target]
-    helper = lock["helper"]
     epoch = lock["sourceDateEpoch"]
     fixed_created_at = created_at(epoch)
-
-    helper_archive = download(
-        helper["archiveUrl"],
-        cache_path(cache_dir, helper["archiveSha256"], ".helper.tar.gz"),
-        helper["archiveSha256"],
-        "liskov-runtime-contact release archive",
-    )
-    verify_size(
-        helper_archive,
-        helper["archiveSize"],
-        "liskov-runtime-contact release archive",
-    )
 
     with tempfile.TemporaryDirectory(prefix=f"liskov-runtime-images-{target}-") as temporary:
         work = Path(temporary)
@@ -1012,24 +970,10 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         base_records = inventory(root)
         base_inventory_digest = inventory_digest(base_records)
 
-        helper_root = work / "helper"
-        helper_root.mkdir()
-        extract_archive(helper_archive, helper_root)
-        helper_binary = helper_root / helper["binaryPath"]
-        helper_license = helper_root / helper["licensePath"]
-        if not helper_binary.is_file() or not helper_license.is_file():
-            raise BuildError("helper release archive is missing its binary or license")
-        verify_digest(helper_binary, helper["binarySha256"], "liskov-runtime-contact binary")
-        verify_size(helper_binary, helper["binarySize"], "liskov-runtime-contact binary")
-
-        binary_destination = root / HELPER_PATH
-        license_destination = root / HELPER_LICENSE_PATH
         shim_library_destination = root / GETIFADDRS_OVERRIDE_LIBRARY_PATH
         shim_source_destination = root / GETIFADDRS_OVERRIDE_SOURCE_PATH
         provenance_destination = root / PROVENANCE_PATH
         for destination in (
-            binary_destination,
-            license_destination,
             shim_library_destination,
             shim_source_destination,
             provenance_destination,
@@ -1037,10 +981,6 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
             if destination.exists() or destination.is_symlink():
                 raise BuildError(f"base image already contains overlay path {destination}")
             destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(helper_binary, binary_destination)
-        os.chmod(binary_destination, 0o755)
-        shutil.copyfile(helper_license, license_destination)
-        os.chmod(license_destination, 0o644)
         build_getifaddrs_override(shim_library_destination)
         shutil.copyfile(GETIFADDRS_OVERRIDE_SOURCE, shim_source_destination)
         os.chmod(shim_source_destination, 0o644)
@@ -1057,12 +997,6 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
             "materials": materials,
             "prootDistroCompatibility": lock["prootDistroCompatibility"],
             "overlay": {
-                "helperVersion": helper["version"],
-                "helperReleaseCommit": helper["releaseCommit"],
-                "helperArchiveSha256": helper["archiveSha256"],
-                "helperArchiveSize": helper["archiveSize"],
-                "helperBinarySha256": helper["binarySha256"],
-                "helperBinarySize": helper["binarySize"],
                 "networkInterfaceOverride": {
                     "contract": "loopback-only-getifaddrs-v1",
                     "sourcePath": GETIFADDRS_OVERRIDE_SOURCE_PATH,
@@ -1152,7 +1086,6 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
                 spdx_document(
                     target,
                     image,
-                    helper,
                     shim_library_digest,
                     archive_root,
                     final_inventory_digest,

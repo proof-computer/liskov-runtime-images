@@ -16,6 +16,12 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None and SPEC.loader is not None
 build_image = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(build_image)
+INSPECT_SPEC = importlib.util.spec_from_file_location(
+    "inspect_artifact", REPOSITORY_ROOT / "scripts/inspect-artifact.py"
+)
+assert INSPECT_SPEC is not None and INSPECT_SPEC.loader is not None
+inspect_artifact = importlib.util.module_from_spec(INSPECT_SPEC)
+INSPECT_SPEC.loader.exec_module(inspect_artifact)
 
 
 class SourceLockTests(unittest.TestCase):
@@ -34,19 +40,11 @@ class SourceLockTests(unittest.TestCase):
             lock["images"]["debian-trixie"]["supportStatus"],
             "release-candidate",
         )
-        self.assertEqual(lock["helper"]["version"], "0.2.9")
-        self.assertEqual(
-            lock["helper"]["releaseCommit"],
-            "0bfbde8041e6597fc6730334ec16e2d370ae3256",
-        )
-        self.assertEqual(lock["helper"]["archiveSize"], 1_317_413)
-        self.assertEqual(lock["helper"]["binarySize"], 2_426_680)
-        for digest in (
-            lock["helper"]["archiveSha256"],
-            lock["helper"]["binarySha256"],
+        self.assertNotIn("helper", lock)
+        self.assertRegex(
             lock["images"]["v4-control"]["sourceSha256"],
-        ):
-            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            r"^[0-9a-f]{64}$",
+        )
         build_image.digest_hex(
             lock["images"]["debian-trixie"]["manifestDigest"],
             "manifestDigest",
@@ -56,8 +54,6 @@ class SourceLockTests(unittest.TestCase):
         self.assertEqual(
             build_image.OVERLAY_PATHS,
             (
-                "usr/local/bin/liskov-runtime-contact",
-                "usr/share/doc/liskov-runtime-contact/LICENSE",
                 "usr/local/lib/libgetifaddrs_override.so",
                 "usr/share/liskov-runtime-images/getifaddrs_override.c",
                 "usr/share/liskov-runtime-images/provenance.json",
@@ -68,30 +64,82 @@ class SourceLockTests(unittest.TestCase):
         self.assertIn("void freeifaddrs(struct ifaddrs *interfaces)", source)
         self.assertIn('strdup("lo")', source)
         self.assertNotIn("Acurast", source)
+        builder = (
+            REPOSITORY_ROOT / "scripts/build-image.py"
+        ).read_text(encoding="utf-8")
+        for removed in (
+            "SPDXRef-Package-Liskov-Runtime-Contact",
+            "helperVersion",
+            "helperReleaseCommit",
+            "helperArchiveSha256",
+            "helperBinarySha256",
+        ):
+            self.assertNotIn(removed, builder)
 
-    def test_release_notes_track_the_locked_helper_version(self) -> None:
+    def test_runtime_helper_is_test_only_and_pinned_to_an_exact_release(self) -> None:
+        contract = json.loads(
+            (REPOSITORY_ROOT / "tests/runtime-contact-release.json").read_bytes()
+        )
+        self.assertEqual(
+            contract["schema"],
+            "proof.liskov.runtime-image.test-helper-release",
+        )
+        self.assertEqual(contract["schemaVersion"], 1)
+        self.assertEqual(contract["tag"], "v0.2.10")
+        self.assertEqual(contract["version"], "0.2.10")
+        self.assertRegex(contract["sourceCommit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(contract["target"], "aarch64-unknown-linux-musl")
+        self.assertRegex(contract["binary"]["sha256"], r"^[0-9a-f]{64}$")
+        self.assertGreater(contract["binary"]["byteSize"], 0)
+        self.assertIn("/releases/download/v0.2.10/", contract["binary"]["url"])
+
+    def test_release_notes_describe_helperless_images(self) -> None:
         release_workflow = (
             REPOSITORY_ROOT / ".github/workflows/release.yml"
         ).read_text()
-        self.assertIn(
-            "helper_version=$(jq -er '.helper.version' sources.lock.json)",
-            release_workflow,
-        )
-        self.assertIn(
-            r"\`liskov-runtime-contact\` v${helper_version} binary",
-            release_workflow,
-        )
+        self.assertNotIn("helper_version=", release_workflow)
+        self.assertIn("do not embed the runtime-contact helper", release_workflow)
 
-    def test_native_verifier_reads_the_locked_helper_version(self) -> None:
+    def test_native_verifier_checks_only_the_owned_shim(self) -> None:
         verifier = (
             REPOSITORY_ROOT / "scripts/verify-native-aarch64.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn('lock["helper"]["version"]', verifier)
-        self.assertIn(
-            'liskov-runtime-contact ${expected_helper_version}',
-            verifier,
+        self.assertNotIn("liskov-runtime-contact", verifier)
+        self.assertIn("libgetifaddrs_override.so", verifier)
+
+    def test_inspector_rejects_removed_helper_paths_and_link_aliases(self) -> None:
+        root = "rootfs"
+        cases: list[tarfile.TarInfo] = []
+
+        helper = tarfile.TarInfo(f"{root}/usr/local/bin/liskov-runtime-contact")
+        helper.type = tarfile.REGTYPE
+        cases.append(helper)
+
+        symlink = tarfile.TarInfo(f"{root}/usr/local/bin/helper-alias")
+        symlink.type = tarfile.SYMTYPE
+        symlink.linkname = "liskov-runtime-contact"
+        cases.append(symlink)
+
+        hardlink = tarfile.TarInfo(f"{root}/license-alias")
+        hardlink.type = tarfile.LNKTYPE
+        hardlink.linkname = (
+            f"{root}/usr/share/doc/liskov-runtime-contact/LICENSE"
         )
-        self.assertNotRegex(verifier, r"liskov-runtime-contact 0\.\d+\.\d+")
+        cases.append(hardlink)
+
+        for member in cases:
+            with self.subTest(name=member.name, linkname=member.linkname):
+                with self.assertRaises(SystemExit):
+                    inspect_artifact.assert_no_removed_helper_aliases(
+                        [member], [member.name], root
+                    )
+
+        safe = tarfile.TarInfo(f"{root}/usr/local/bin/safe-link")
+        safe.type = tarfile.SYMTYPE
+        safe.linkname = "../../bin/sh"
+        inspect_artifact.assert_no_removed_helper_aliases(
+            [safe], [safe.name], root
+        )
 
     def test_shared_object_verifier_rejects_wrong_machine_and_type(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -144,7 +192,7 @@ class CanaryContractTests(unittest.TestCase):
 
         self.assertEqual(
             probe["runtime"]["command"],
-            "/usr/local/bin/liskov-runtime-contact --bridge-probe -- /bin/true",
+            "/bin/true",
         )
         self.assertEqual(
             probe["deployment"]["placement"]["processorSelection"],
@@ -187,6 +235,11 @@ class CanaryContractTests(unittest.TestCase):
                 manifest["runtime"]["command"],
             )
         self.assertTrue(probe["observability"]["logs"]["enabled"])
+        probe_workflow = (
+            REPOSITORY_ROOT
+            / ".github/workflows/canary-v4-bridge-probe.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("bootstrap-mode: bridge-probe", probe_workflow)
         for manifest in (v4, debian):
             self.assertFalse(manifest["observability"]["logs"]["enabled"])
 

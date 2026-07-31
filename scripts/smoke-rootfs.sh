@@ -10,7 +10,7 @@ target=$1
 archive=$2
 repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-for tool in proot python3 tar file readelf; do
+for tool in proot python3 tar file readelf curl sha256sum; do
   command -v "${tool}" >/dev/null || {
     echo "required smoke tool is missing: ${tool}" >&2
     exit 2
@@ -55,15 +55,68 @@ print(lock["images"][sys.argv[2]]["archiveRoot"])
 # /dev for the smoke, so skip only those archive members during extraction.
 tar --exclude="${root_name}/dev/*" -xJf "${archive}" -C "${smoke_root}"
 rootfs="${smoke_root}/${root_name}"
-helper="${rootfs}/usr/local/bin/liskov-runtime-contact"
 shim="${rootfs}/usr/local/lib/libgetifaddrs_override.so"
 shim_source="${rootfs}/usr/share/liskov-runtime-images/getifaddrs_override.c"
+
+test ! -e "${rootfs}/usr/local/bin/liskov-runtime-contact"
+test ! -L "${rootfs}/usr/local/bin/liskov-runtime-contact"
+test ! -e "${rootfs}/usr/share/doc/liskov-runtime-contact/LICENSE"
+test ! -L "${rootfs}/usr/share/doc/liskov-runtime-contact/LICENSE"
+bootstrap_root="${rootfs}/tmp/liskov-bootstrap-test"
+mkdir -p "${bootstrap_root}"
+helper="${bootstrap_root}/liskov-runtime-contact"
+launcher="${bootstrap_root}/acurast.sh"
+helper_contract="${repository_root}/tests/runtime-contact-release.json"
+helper_url=$(python3 -c '
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_bytes())["binary"]["url"])
+' "${helper_contract}")
+helper_sha256=$(python3 -c '
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_bytes())["binary"]["sha256"])
+' "${helper_contract}")
+helper_size=$(python3 -c '
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_bytes())["binary"]["byteSize"])
+' "${helper_contract}")
+helper_version=$(python3 -c '
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_bytes())["version"])
+' "${helper_contract}")
+curl --fail --location --show-error --silent \
+  --output "${helper}" \
+  "${helper_url}"
+[[ "$(wc -c < "${helper}")" == "${helper_size}" ]]
+[[ "$(sha256sum "${helper}" | cut -d ' ' -f 1)" == "${helper_sha256}" ]]
+chmod 0755 "${helper}"
+
+render_launcher() {
+  local mode=$1
+  python3 - \
+    "${repository_root}/tests/acurast.sh.template" \
+    "${launcher}" \
+    "${mode}" <<'PY'
+import pathlib
+import sys
+
+template = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+mode = sys.argv[3]
+arguments = {"standard": "", "bridge-probe": " --bridge-probe"}
+if mode not in arguments:
+    raise SystemExit(f"invalid test launcher mode: {mode}")
+rendered = template.replace("@BRIDGE_PROBE_ARGUMENT@", arguments[mode])
+if "@BRIDGE_PROBE_ARGUMENT@" in rendered:
+    raise SystemExit("test launcher template was not fully rendered")
+pathlib.Path(sys.argv[2]).write_text(rendered, encoding="utf-8")
+PY
+  chmod 0755 "${launcher}"
+}
 
 file "${helper}" | grep -Eq 'ARM aarch64|ARM64'
 file "${helper}" | grep -q 'statically linked'
 readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
 if readelf -l "${helper}" | grep -q 'interpreter'; then
-  echo "embedded helper unexpectedly requests a dynamic interpreter" >&2
+  echo "test-only helper unexpectedly requests a dynamic interpreter" >&2
   exit 1
 fi
 test -r "${shim_source}"
@@ -85,7 +138,8 @@ proot "${qemu_args[@]}" -0 \
     set -eu
     test "$(id -u)" = 0
     test -x /bin/sh
-    /usr/local/bin/liskov-runtime-contact --version
+    version=$(/tmp/liskov-bootstrap-test/liskov-runtime-contact --version)
+    test "${version}" = "liskov-runtime-contact '"${helper_version}"'"
     LD_PRELOAD=/usr/local/lib/libgetifaddrs_override.so /bin/sh -c :
     getent hosts liskov.proof.computer >/dev/null
   '
@@ -108,6 +162,7 @@ done
   exit 1
 }
 
+render_launcher standard
 set +e
 BRIDGE_SOCKET="${socket_name}" proot "${qemu_args[@]}" -0 \
   -r "${rootfs}" \
@@ -116,7 +171,7 @@ BRIDGE_SOCKET="${socket_name}" proot "${qemu_args[@]}" -0 \
   -b /sys \
   -b /etc/resolv.conf \
   -w / \
-  /usr/local/bin/liskov-runtime-contact -- /bin/true
+  /tmp/liskov-bootstrap-test/acurast.sh
 helper_status=$?
 set -e
 
@@ -148,6 +203,7 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     exit 1
   }
 
+  render_launcher standard
   set +e
   BRIDGE_SOCKET="${https_socket_name}" proot "${qemu_args[@]}" -0 \
     -r "${rootfs}" \
@@ -156,9 +212,7 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     -b /sys \
     -b /etc/resolv.conf \
     -w / \
-    /usr/local/bin/liskov-runtime-contact \
-      --core-url https://example.com \
-      -- /bin/true
+    /tmp/liskov-bootstrap-test/acurast.sh
   https_status=$?
   set -e
 
@@ -193,6 +247,7 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     exit 1
   }
 
+  render_launcher bridge-probe
   set +e
   BRIDGE_SOCKET="${probe_socket_name}" proot "${qemu_args[@]}" -0 \
     -r "${rootfs}" \
@@ -201,10 +256,7 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     -b /sys \
     -b /etc/resolv.conf \
     -w / \
-    /usr/local/bin/liskov-runtime-contact \
-      --bridge-probe \
-      --core-url https://example.com \
-      -- /bin/true
+    /tmp/liskov-bootstrap-test/acurast.sh
   probe_status=$?
   set -e
 

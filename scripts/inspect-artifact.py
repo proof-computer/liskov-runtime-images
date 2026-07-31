@@ -6,11 +6,67 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import stat
 import tarfile
 from pathlib import Path, PurePosixPath
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+REMOVED_HELPER_PATHS = (
+    PurePosixPath("usr/local/bin/liskov-runtime-contact"),
+    PurePosixPath("usr/share/doc/liskov-runtime-contact/LICENSE"),
+)
+
+
+def normalized_posix_path(path: PurePosixPath) -> PurePosixPath | None:
+    parts: list[str] = []
+    for part in path.parts:
+        if part in {"", ".", "/"}:
+            continue
+        if part == "..":
+            if not parts:
+                return None
+            parts.pop()
+        else:
+            parts.append(part)
+    return PurePosixPath(*parts)
+
+
+def assert_no_removed_helper_aliases(
+    members: list[tarfile.TarInfo],
+    names: list[str],
+    expected_root: str,
+) -> None:
+    forbidden = {
+        PurePosixPath(expected_root) / relative
+        for relative in REMOVED_HELPER_PATHS
+    }
+    for member, name in zip(members, names, strict=True):
+        member_path = normalized_posix_path(PurePosixPath(name))
+        if member_path in forbidden:
+            raise SystemExit(f"removed helper path is present: {name}")
+        if not (member.issym() or member.islnk()):
+            continue
+        link = PurePosixPath(member.linkname)
+        candidates: list[PurePosixPath | None]
+        if link.is_absolute():
+            candidates = [
+                normalized_posix_path(
+                    PurePosixPath(expected_root, *link.parts[1:])
+                )
+            ]
+        elif member.issym():
+            candidates = [
+                normalized_posix_path(PurePosixPath(name).parent / link)
+            ]
+        else:
+            candidates = [
+                normalized_posix_path(link),
+                normalized_posix_path(PurePosixPath(expected_root) / link),
+                normalized_posix_path(PurePosixPath(name).parent / link),
+            ]
+        if any(candidate in forbidden for candidate in candidates):
+            raise SystemExit(
+                f"archive link aliases a removed helper path: {name} -> {member.linkname}"
+            )
 
 
 def main() -> int:
@@ -21,10 +77,8 @@ def main() -> int:
 
     lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes())
     image = lock["images"][args.target]
-    helper = lock["helper"]
     expected_root = image["archiveRoot"]
     expected_epoch = lock["sourceDateEpoch"]
-    helper_member = f"{expected_root}/usr/local/bin/liskov-runtime-contact"
     shim_library_member = (
         f"{expected_root}/usr/local/lib/libgetifaddrs_override.so"
     )
@@ -34,15 +88,14 @@ def main() -> int:
     provenance_member = (
         f"{expected_root}/usr/share/liskov-runtime-images/provenance.json"
     )
-    license_member = (
-        f"{expected_root}/usr/share/doc/liskov-runtime-contact/LICENSE"
-    )
 
     with tarfile.open(args.archive, "r:xz") as archive:
         members = archive.getmembers()
         if not members:
             raise SystemExit("archive is empty")
         names = [member.name.removeprefix("./") for member in members]
+        if len(names) != len(set(names)):
+            raise SystemExit("archive contains duplicate member names")
         roots = {PurePosixPath(name).parts[0] for name in names if name}
         if roots != {expected_root}:
             raise SystemExit(f"unexpected archive roots: {sorted(roots)}")
@@ -54,29 +107,16 @@ def main() -> int:
                 raise SystemExit(f"non-root numeric owner on {name}")
             if member.mtime != expected_epoch:
                 raise SystemExit(f"non-canonical mtime on {name}")
+        assert_no_removed_helper_aliases(members, names, expected_root)
 
         by_name = dict(zip(names, members, strict=True))
         for required in (
-            helper_member,
             shim_library_member,
             shim_source_member,
             provenance_member,
-            license_member,
         ):
             if required not in by_name:
                 raise SystemExit(f"missing required member {required}")
-        helper_info = by_name[helper_member]
-        if not helper_info.isfile() or stat.S_IMODE(helper_info.mode) != 0o755:
-            raise SystemExit("embedded helper is not an executable regular file")
-        helper_file = archive.extractfile(helper_info)
-        if helper_file is None:
-            raise SystemExit("could not read embedded helper")
-        helper_bytes = helper_file.read()
-        if len(helper_bytes) != helper["binarySize"]:
-            raise SystemExit("embedded helper size differs from sources.lock.json")
-        helper_digest = hashlib.sha256(helper_bytes).hexdigest()
-        if helper_digest != helper["binarySha256"]:
-            raise SystemExit("embedded helper digest differs from sources.lock.json")
         shim_library_file = archive.extractfile(by_name[shim_library_member])
         if shim_library_file is None:
             raise SystemExit("could not read embedded getifaddrs override")
@@ -109,9 +149,17 @@ def main() -> int:
             raise SystemExit("embedded provenance domain is invalid")
         if provenance.get("target") != args.target:
             raise SystemExit("embedded provenance target is invalid")
-        shim_provenance = provenance.get("overlay", {}).get(
-            "networkInterfaceOverride", {}
-        )
+        overlay = provenance.get("overlay", {})
+        expected_overlay_paths = [
+            "usr/local/lib/libgetifaddrs_override.so",
+            "usr/share/liskov-runtime-images/getifaddrs_override.c",
+            "usr/share/liskov-runtime-images/provenance.json",
+        ]
+        if set(overlay) != {"networkInterfaceOverride", "paths"}:
+            raise SystemExit("embedded overlay provenance has unexpected fields")
+        if overlay.get("paths") != expected_overlay_paths:
+            raise SystemExit("embedded overlay provenance path set is invalid")
+        shim_provenance = overlay.get("networkInterfaceOverride", {})
         if (
             shim_provenance.get("sourceSha256") != shim_source_digest
             or shim_provenance.get("librarySha256") != shim_library_digest
@@ -126,7 +174,6 @@ def main() -> int:
                 "archive": str(args.archive),
                 "archiveRoot": expected_root,
                 "memberCount": len(members),
-                "helperSha256": helper_digest,
                 "getifaddrsOverrideSha256": shim_library_digest,
             },
             sort_keys=True,

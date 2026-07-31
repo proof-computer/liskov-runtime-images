@@ -5,17 +5,15 @@
 - Add the digest-pinned Debian Trixie AArch64 OCI-derived release candidate.
 - Add the exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64
   compatibility control.
-- Embed `liskov-runtime-contact` v0.2.9 through an exact five-path overlay,
-  including owned pre-contact reporting and a budget-correct, closed-enum
-  bridge probe. Signed contact and every decision-critical probe now use unique
-  Processor-compatible decimal `UInt` request IDs. The probe first reproduces
-  Acurast's Cargo-native `signer_publicKey`/P-256 request with the shared
-  15-second bound, then checks the documented assigned-processors call before
-  exercising Liskov's stricter identity and harmless Ed25519 signing contract.
-  The incompatible long-ID comparison remains bounded evidence only.
+- Remove `liskov-runtime-contact`, its license, source lock, provenance fields,
+  inventory entries, and SPDX relationships from both published image lanes.
+  Liskov now snapshots the verified helper beside generated `acurast.sh`.
+- Make the bounded v4 bridge probe an explicit server-authorized bootstrap mode
+  over the ordinary `/bin/true` command; customer command strings are never
+  interpreted as internal control signals.
 - Enable log capture only for the bounded v4 bridge probe; final v4 and Debian
   canaries remain unchanged and keep log capture disabled.
-- Include the source and deterministic AArch64 shared object for Acurast's
+- Retain the source and deterministic AArch64 shared object for Acurast's
   documented loopback-only `getifaddrs` override.
 - Add deterministic archives, inventories, overlay ledgers, SPDX SBOMs,
   provenance records, native ARM64/PRoot validation, checksums, and GitHub

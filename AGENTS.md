@@ -9,17 +9,20 @@ images curated for Liskov-managed Acurast Cargo/PRoot workloads.
 - Treat `v4-control` as a compatibility control, not the maintained default.
 - Build the maintained image from the exact single-platform OCI manifest
   digest, never from a mutable tag.
-- Overlay only the released `liskov-runtime-contact` binary, its Apache-2.0
-  license, the source and deterministically compiled AArch64 shared object for
-  the documented Acurast `getifaddrs` compatibility override, and the generated
-  Liskov provenance record.
+- Overlay only the source and deterministically compiled AArch64 shared object
+  for the documented Acurast `getifaddrs` compatibility override and the
+  generated Liskov provenance record.
+- Never embed `liskov-runtime-contact` or its license. The control plane
+  snapshots the verified helper beside generated `acurast.sh`; image validation
+  may inject one exact released helper only into an ephemeral test root.
 - Keep image construction independent of `liskov-rs`. The reusable
   `liskov-github-actions` workflow may consume release artifacts later.
 
 ## Supply-chain invariants
 
-- Verify every downloaded manifest, config, layer, rootfs archive, and helper
-  archive before extracting it.
+- Verify every downloaded manifest, config, layer, and rootfs archive before
+  extracting it. Verify the test-only helper before injecting it into a smoke
+  root.
 - Reject archive path traversal and symlink-parent traversal.
 - Do not use PRoot-Distro `install` or `backup` output as a release artifact:
   those commands apply host-specific fixups or produce restore bundles.

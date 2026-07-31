@@ -18,7 +18,9 @@ TARGETS = ("debian-trixie", "v4-control")
 FINGERPRINT_DOMAIN = "proof.liskov.runtime-image.material-inputs.v1"
 MATERIAL_EXACT = {
     "sources.lock.json",
+    "tests/acurast.sh.template",
     "tests/bridge-smoke-server.py",
+    "tests/runtime-contact-release.json",
 }
 MATERIAL_PREFIXES = (
     "assets/",
