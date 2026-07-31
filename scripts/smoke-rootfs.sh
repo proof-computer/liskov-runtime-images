@@ -177,8 +177,8 @@ set -e
 
 wait "${bridge_pid}"
 bridge_pid=
-if [[ "${helper_status}" -ne 70 ]]; then
-  echo "bridge smoke expected fail-closed status 70, got ${helper_status}" >&2
+if [[ "${helper_status}" -ne 81 ]]; then
+  echo "bridge smoke expected deployment-identity diagnostic status 81, got ${helper_status}" >&2
   exit 1
 fi
 grep -qx 'deployment_id' "${method_file}"
@@ -218,8 +218,8 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
 
   wait "${bridge_pid}"
   bridge_pid=
-  if [[ "${https_status}" -ne 70 ]]; then
-    echo "HTTPS smoke expected permanent HTTP rejection status 70, got ${https_status}" >&2
+  if [[ "${https_status}" -ne 90 ]]; then
+    echo "HTTPS smoke expected permanent-rejection diagnostic status 90, got ${https_status}" >&2
     exit 1
   fi
   expected_methods=$'deployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
@@ -262,8 +262,8 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
 
   wait "${bridge_pid}"
   bridge_pid=
-  if [[ "${probe_status}" -ne 70 ]]; then
-    echo "bridge probe smoke expected permanent HTTP rejection status 70, got ${probe_status}" >&2
+  if [[ "${probe_status}" -ne 90 ]]; then
+    echo "bridge probe smoke expected permanent-rejection diagnostic status 90, got ${probe_status}" >&2
     exit 1
   fi
   expected_probe_methods=$'signer_publicKey\ndeployment_assignedProcessors\nprocessor_version\ndeployment_id\ndeployment_ipfsHash\ndeployment_publicKeys\nsigner_sign\nprocessor_version\ndeployment_id\ndeployment_publicKeys\ndeployment_assignedProcessors\nsigner_sign'
