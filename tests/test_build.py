@@ -289,6 +289,46 @@ class CanaryContractTests(unittest.TestCase):
         )
         self.assertEqual(seed["runtime"]["resources"]["networkRequestQuota"], 0)
 
+    def test_targeted_debian_canary_reuses_the_proven_v4_processor(self) -> None:
+        seed = self.load_manifest("liskov-runtime-images-v7-canary.policy.json")
+
+        self.assertEqual(seed["applicationId"], "liskov-runtime-images-v7-canary")
+        self.assertEqual(
+            seed["release"]["artifact"],
+            {
+                "kind": "runtime_image",
+                "imageDigest": (
+                    "sha256:"
+                    "97523a10978903fe63bb0df55fc0be411a137a101d2697a3d866c2abb1a0ddf4"
+                ),
+                "bootstrapCid": (
+                    "ipfs://Qmet3Lch34ZHrHeRZyKgRv2ghdgsL6f12gvaGowsTDG4We"
+                ),
+                "bootstrapDigest": (
+                    "sha256:"
+                    "51f888cb07a1ff5e4dc8797bf277ade9c7017ade2b33f12bdb930940fe065fd4"
+                ),
+            },
+        )
+        self.assertEqual(
+            seed["deployment"]["placement"]["processorSelection"],
+            {
+                "mode": "static",
+                "managerId": "9470",
+                "processorIds": [
+                    "5Cg4c9vxk1QisATkiTUAZ9g2Ch1FKvTuiEqKLkvnHi2KGZCD"
+                ],
+                "requireScheduleClear": True,
+                "requireConsumerAccess": True,
+            },
+        )
+        self.assertEqual(seed["runtime"]["maxGenerations"], 1)
+        self.assertEqual(
+            seed["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"],
+            0,
+        )
+        self.assertEqual(seed["runtime"]["resources"]["networkRequestQuota"], 0)
+
 
 class ExtractionTests(unittest.TestCase):
     def write_tar(self, path: Path, entries: list[tuple[str, bytes]]) -> None:
