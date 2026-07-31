@@ -4,7 +4,7 @@
   "applicationId": "liskov-runtime-images-v7-canary",
   "metadata": {
     "appType": "background-worker",
-    "description": "Fresh, bounded Acurast canary pinned to the exact RC11 Debian Trixie candidate bytes and the processor that passed the final v4 control after v6 received no processor assignment.",
+    "description": "Fresh, bounded Acurast canary pinned to the exact RC11 Debian Trixie candidate bytes and a schedule-clear processor with prior signed runtime contact after v6 received no processor assignment.",
     "labels": [
       "liskov",
       "runtime-image",
@@ -55,7 +55,7 @@
         "mode": "static",
         "managerId": "9470",
         "processorIds": [
-          "5Cg4c9vxk1QisATkiTUAZ9g2Ch1FKvTuiEqKLkvnHi2KGZCD"
+          "5DH3ipjftEhSSihRyXJEndcMtRBmxyVbphdH85rXw8BUJFkv"
         ],
         "requireScheduleClear": true,
         "requireConsumerAccess": true

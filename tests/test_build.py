@@ -289,7 +289,9 @@ class CanaryContractTests(unittest.TestCase):
         )
         self.assertEqual(seed["runtime"]["resources"]["networkRequestQuota"], 0)
 
-    def test_targeted_debian_canary_reuses_the_proven_v4_processor(self) -> None:
+    def test_targeted_debian_canary_uses_a_schedule_clear_contacted_processor(
+        self,
+    ) -> None:
         seed = self.load_manifest("liskov-runtime-images-v7-canary.policy.json")
 
         self.assertEqual(seed["applicationId"], "liskov-runtime-images-v7-canary")
@@ -316,7 +318,7 @@ class CanaryContractTests(unittest.TestCase):
                 "mode": "static",
                 "managerId": "9470",
                 "processorIds": [
-                    "5Cg4c9vxk1QisATkiTUAZ9g2Ch1FKvTuiEqKLkvnHi2KGZCD"
+                    "5DH3ipjftEhSSihRyXJEndcMtRBmxyVbphdH85rXw8BUJFkv"
                 ],
                 "requireScheduleClear": True,
                 "requireConsumerAccess": True,
