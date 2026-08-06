@@ -77,7 +77,7 @@
       },
       "recovery": {
         "launch": {
-          "maxRetries": 0
+          "maxRetries": 5
         },
         "runtimeFailure": {
           "mode": "wait_until_scheduled_end"
