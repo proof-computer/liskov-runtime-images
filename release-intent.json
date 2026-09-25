@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "v0.1.0-rc.12",
-  "materialInputFingerprint": "sha256:3b056ae304373cfebfbf3f72c69ad9994ddc3b785845358eaf65eb4b5baffd6e",
+  "version": "v0.1.0-rc.13",
+  "materialInputFingerprint": "sha256:634f2779f709514238db460d2958ba2f28b21caa2f8de6f043aed5681efdcf85",
   "targets": [
     "debian-trixie",
+    "debian-trixie-snapshot",
     "v4-control"
   ]
 }
