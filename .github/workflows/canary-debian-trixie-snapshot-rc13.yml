@@ -1,0 +1,21 @@
+name: Canary Debian Trixie snapshot image rc.13
+
+on:
+  workflow_dispatch:
+
+permissions:
+  attestations: read
+  contents: read
+  id-token: write
+
+jobs:
+  upload:
+    uses: proof-computer/liskov-github-actions/.github/workflows/runtime-image.yml@v1
+    with:
+      application-id: liskov-runtime-images-rc13-snapshot-canary
+      manifest-path: .liskov/liskov-runtime-images-rc13-snapshot-canary.policy.json
+      image-url: https://github.com/proof-computer/liskov-runtime-images/releases/download/v0.1.0-rc.13/liskov-runtime-image-debian-trixie-snapshot-aarch64.tar.xz
+      expected-sha256: ac69afc5c8737db519f653f42f150c814cfd2c1173bececa15fc32258a8e2f9a
+      attestation-repository: proof-computer/liskov-runtime-images
+      attestation-source-digest: e061dfd03f430657b4e937d91cfc804b1670d0f5
+      attestation-signer-workflow: proof-computer/liskov-runtime-images/.github/workflows/ci.yml
