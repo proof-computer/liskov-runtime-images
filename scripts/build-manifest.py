@@ -14,7 +14,7 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_NAME = "BUILD-MANIFEST.json"
 CHECKSUMS_NAME = "SHA256SUMS"
-TARGETS = ("debian-trixie", "v4-control")
+TARGETS = ("debian-trixie", "debian-trixie-snapshot", "v4-control")
 SUFFIXES = (
     ".tar.xz",
     ".files.json",

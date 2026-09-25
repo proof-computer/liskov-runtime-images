@@ -160,6 +160,7 @@ class BuildManifestTests(unittest.TestCase):
         lock = {
             "images": {
                 "debian-trixie": {"outputStem": "debian"},
+                "debian-trixie-snapshot": {"outputStem": "debian-snapshot"},
                 "v4-control": {"outputStem": "v4"},
             }
         }

@@ -129,7 +129,7 @@ jobs:
       - name: Boot and smoke under QEMU/PRoot
         env:
           TARGET: ${{ matrix.target }}
-          LISKOV_SMOKE_HTTPS: ${{ matrix.target == 'debian-trixie' && '1' || '0' }}
+          LISKOV_SMOKE_HTTPS: ${{ (matrix.target == 'debian-trixie' || matrix.target == 'debian-trixie-snapshot') && '1' || '0' }}
         run: |
           set -euo pipefail
           archive=$(find smoke -maxdepth 1 -type f -name '*.tar.xz' -print -quit)

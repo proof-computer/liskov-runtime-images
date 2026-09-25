@@ -115,6 +115,7 @@ jobs:
             echo
             echo "- \`debian-trixie\` is the ${debian_status}."
             echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
+            echo "- \`debian-trixie-snapshot\` is the Liskov-authored snapshot-lane candidate (ADR-0171); it is not promoted until its own bounded Acurast canary passes."
             echo "- Images do not embed the runtime-contact helper; Liskov supplies an independently verified helper in each generated launch bundle."
             echo "- Every image includes the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, commit-bound build manifest, checksums, and GitHub attestation."
             echo

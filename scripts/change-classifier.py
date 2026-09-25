@@ -14,7 +14,7 @@ from typing import Iterable
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_INTENT_PATH = "release-intent.json"
-TARGETS = ("debian-trixie", "v4-control")
+TARGETS = ("debian-trixie", "debian-trixie-snapshot", "v4-control")
 FINGERPRINT_DOMAIN = "proof.liskov.runtime-image.material-inputs.v1"
 MATERIAL_EXACT = {
     "sources.lock.json",

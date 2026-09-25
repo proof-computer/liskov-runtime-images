@@ -52,7 +52,7 @@ else
   fi
 fi
 
-for target in debian-trixie v4-control; do
+for target in debian-trixie debian-trixie-snapshot v4-control; do
   "${compiler_environment[@]}" python3 "${repository_root}/scripts/build-image.py" \
     "${target}" \
     --output-dir "${validation_root}/${target}" \

@@ -42,6 +42,51 @@
       "archiveRoot": "liskov-debian-trixie-aarch64",
       "outputStem": "liskov-runtime-image-debian-trixie-aarch64",
       "supportStatus": "release-candidate"
+    },
+    "debian-trixie-snapshot": {
+      "kind": "apt-snapshot",
+      "distribution": "debian",
+      "release": "trixie",
+      "architecture": "arm64",
+      "snapshot": {
+        "archiveUrl": "http://snapshot.debian.org/archive/debian/20260920T000000Z/",
+        "inReleaseUrl": "https://snapshot.debian.org/archive/debian/20260920T000000Z/dists/trixie/InRelease",
+        "inReleaseSha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675"
+      },
+      "suite": "trixie",
+      "components": [
+        "main"
+      ],
+      "variant": "apt",
+      "include": [
+        "ca-certificates",
+        "curl"
+      ],
+      "keyring": {
+        "package": "debian-archive-keyring",
+        "version": "2025.1",
+        "path": "/usr/share/keyrings/debian-archive-keyring.gpg",
+        "sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017"
+      },
+      "builder": {
+        "registry": "https://registry-1.docker.io",
+        "repository": "library/debian",
+        "imageDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
+        "mmdebstrapPackage": "mmdebstrap",
+        "mmdebstrapVersion": "1.5.7-1+deb13u1"
+      },
+      "fixups": {
+        "etc/hostname": "localhost\n",
+        "etc/hosts": "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n",
+        "etc/resolv.conf": "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
+      },
+      "removals": [
+        "var/cache/apt/pkgcache.bin",
+        "var/cache/apt/srcpkgcache.bin"
+      ],
+      "archiveRoot": "liskov-debian-trixie-snapshot-aarch64",
+      "outputStem": "liskov-runtime-image-debian-trixie-snapshot-aarch64",
+      "supportStatus": "release-candidate"
     }
   }
 }

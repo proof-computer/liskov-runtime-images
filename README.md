@@ -16,6 +16,7 @@ snapshots one verified helper beside the generated `acurast.sh` launch bundle.
 | --- | --- | --- |
 | `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | Maintained default; exact `v0.1.0-rc.12` bytes promoted after the bounded Acurast A/B canary |
 | `v4-control` | Exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64 release asset | Compatibility control only |
+| `debian-trixie-snapshot` | Debian `trixie` bootstrapped by a pinned `mmdebstrap` from an immutable `snapshot.debian.org` timestamp, inside a digest-pinned builder container | Release candidate for the Liskov-authored lane (ADR-0171); a security rebuild is a snapshot-timestamp bump |
 
 Acurast consumes an image URL and SHA-256, not a PRoot-Distro major version.
 PRoot-Distro v5 no longer publishes distribution rootfs assets; it materializes
@@ -27,6 +28,29 @@ reference. It does not publish host-specific output from PRoot-Distro
 The v4 control is deliberately not the maintained default. Its upstream asset
 is retained to distinguish an Acurast archive/PRoot compatibility failure from
 a newer OCI-rootfs problem.
+
+### The snapshot lane
+
+Upstream stopped publishing PRoot rootfs tarballs (the last Termux v4 assets
+are from December 2025; v5 publishes none), so neither upstream lane can carry
+a security rebuild. The `apt-snapshot` kind builds the rootfs itself:
+
+1. `scripts/mmdebstrap-docker.sh` starts the digest-pinned builder image,
+   points apt at the locked snapshot timestamp, installs the locked
+   `mmdebstrap` and `debian-archive-keyring` versions from that same
+   snapshot, verifies the keyring digest, and runs `mmdebstrap` in `root`
+   mode with the locked suite, components, variant and include list, writing
+   a plain tar to standard output.
+2. `scripts/build-image.py` verifies the snapshot `InRelease` digest, extracts
+   the tar with the same traversal-safe extractor as the other lanes, writes
+   the declared fixups (`/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf`,
+   which `mmdebstrap` would otherwise copy from the build host), removes the
+   declared apt cache files, and continues with the common overlay, canonical
+   archive, inventory, SBOM and provenance steps.
+
+The recipe, the bootstrap archive digest and every applied fixup are recorded
+under `aptSnapshot` in the provenance record. Set
+`LISKOV_APT_SNAPSHOT_RUNNER` to substitute the container runner.
 
 ## Declared Liskov overlay
 

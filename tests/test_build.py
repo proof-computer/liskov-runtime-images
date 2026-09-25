@@ -30,7 +30,20 @@ class SourceLockTests(unittest.TestCase):
         self.assertEqual(lock["schemaVersion"], 1)
         self.assertEqual(
             set(lock["images"]),
-            {"v4-control", "debian-trixie"},
+            {"v4-control", "debian-trixie", "debian-trixie-snapshot"},
+        )
+        snapshot = lock["images"]["debian-trixie-snapshot"]
+        self.assertEqual(snapshot["kind"], "apt-snapshot")
+        self.assertEqual(snapshot["supportStatus"], "release-candidate")
+        self.assertRegex(snapshot["snapshot"]["inReleaseSha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(snapshot["keyring"]["sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(
+            snapshot["snapshot"]["archiveUrl"],
+            r"^http://snapshot\.debian\.org/archive/debian/[0-9]{8}T[0-9]{6}Z/$",
+        )
+        build_image.digest_hex(snapshot["builder"]["imageDigest"], "builder.imageDigest")
+        self.assertEqual(
+            set(snapshot["fixups"]), {"etc/hostname", "etc/hosts", "etc/resolv.conf"}
         )
         self.assertEqual(
             lock["images"]["v4-control"]["supportStatus"],
