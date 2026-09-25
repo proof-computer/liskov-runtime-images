@@ -141,7 +141,7 @@ proot "${qemu_args[@]}" -0 \
     version=$(/tmp/liskov-bootstrap-test/liskov-runtime-contact --version)
     test "${version}" = "liskov-runtime-contact '"${helper_version}"'"
     LD_PRELOAD=/usr/local/lib/libgetifaddrs_override.so /bin/sh -c :
-    getent hosts liskov.proof.computer >/dev/null
+    getent hosts api.liskov.proof.computer >/dev/null
   '
 
 socket_name="liskov-runtime-images-smoke-${GITHUB_RUN_ID:-local}-$$"
