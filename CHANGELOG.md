@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0-rc.13
+
 - Add the `debian-trixie-snapshot` release candidate: an `apt-snapshot` source
   kind that bootstraps Debian trixie from a pinned `snapshot.debian.org`
   timestamp with a pinned `mmdebstrap` inside a digest-pinned builder
