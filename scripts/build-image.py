@@ -485,6 +485,116 @@ def materialize_oci(
     return materials, omitted
 
 
+def materialize_apt_snapshot(
+    image: dict[str, Any], root: Path, cache_dir: Path, work: Path
+) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+    """Build a rootfs from an immutable archive snapshot and apply the declared fixups."""
+
+    snapshot = image["snapshot"]
+    keyring = image["keyring"]
+    builder = image["builder"]
+    download(
+        snapshot["inReleaseUrl"],
+        cache_path(cache_dir, snapshot["inReleaseSha256"], ".InRelease"),
+        snapshot["inReleaseSha256"],
+        "snapshot InRelease",
+    )
+    runner = os.environ.get(
+        "LISKOV_APT_SNAPSHOT_RUNNER",
+        str(REPOSITORY_ROOT / "scripts/mmdebstrap-docker.sh"),
+    )
+    environment = {
+        **os.environ,
+        "LISKOV_APT_BUILDER_IMAGE": f"{builder['repository'].removeprefix('library/')}@{builder['imageDigest']}",
+        "LISKOV_APT_MMDEBSTRAP_PACKAGE": builder["mmdebstrapPackage"],
+        "LISKOV_APT_MMDEBSTRAP_VERSION": builder["mmdebstrapVersion"],
+        "LISKOV_APT_KEYRING_PACKAGE": keyring["package"],
+        "LISKOV_APT_KEYRING_VERSION": keyring["version"],
+        "LISKOV_APT_KEYRING_PATH": keyring["path"],
+        "LISKOV_APT_KEYRING_SHA256": keyring["sha256"],
+        "LISKOV_APT_ARCHIVE_URL": snapshot["archiveUrl"],
+        "LISKOV_APT_SUITE": image["suite"],
+        "LISKOV_APT_COMPONENTS": ",".join(image["components"]),
+        "LISKOV_APT_VARIANT": image["variant"],
+        "LISKOV_APT_INCLUDE": ",".join(image["include"]),
+        "LISKOV_APT_ARCHITECTURE": image["architecture"],
+        "SOURCE_DATE_EPOCH": str(image_epoch(image)),
+    }
+    bootstrap_tar = work / "bootstrap.tar"
+    with bootstrap_tar.open("wb") as output:
+        completed = subprocess.run(
+            [runner], env=environment, stdout=output, check=False
+        )
+    if completed.returncode != 0:
+        raise BuildError(f"apt snapshot bootstrap failed with exit {completed.returncode}")
+    if bootstrap_tar.stat().st_size == 0:
+        raise BuildError("apt snapshot bootstrap produced an empty archive")
+    # The bootstrap tar is not itself reproducible: mmdebstrap copies the
+    # builder's /etc/hostname and /etc/resolv.conf into it, and the container
+    # hostname changes on every run. The declared fixups replace both, and
+    # the reproducible identity is the post-fixup base inventory digest.
+
+    root.mkdir()
+    omitted = extract_archive(bootstrap_tar, root, ignore_xattrs=True)
+
+    applied: dict[str, str] = {}
+    for relative, content in sorted(image.get("fixups", {}).items()):
+        destination = safe_destination(root, relative)
+        if destination.is_symlink():
+            destination.unlink()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+        os.chmod(destination, 0o644)
+        applied[relative] = sha256_bytes(content.encode())
+    removed: list[str] = []
+    for relative in sorted(image.get("removals", [])):
+        destination = safe_destination(root, relative)
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+            removed.append(relative)
+        elif destination.exists():
+            raise BuildError(f"declared removal is not a regular file: {relative}")
+
+    materials = [
+        {
+            "uri": snapshot["inReleaseUrl"],
+            "digest": {"sha256": snapshot["inReleaseSha256"]},
+            "mediaType": "text/plain",
+            "role": "archive-snapshot-release",
+        },
+        {
+            "uri": f"oci://{builder['repository']}@{builder['imageDigest']}",
+            "digest": {"sha256": digest_hex(builder["imageDigest"], "builder.imageDigest")},
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "role": "builder-image",
+        },
+        {
+            "uri": f"pkg:deb/{image['distribution']}/{builder['mmdebstrapPackage']}@{builder['mmdebstrapVersion']}",
+            "role": "builder-tool",
+        },
+        {
+            "uri": f"pkg:deb/{image['distribution']}/{keyring['package']}@{keyring['version']}",
+            "digest": {"sha256": keyring["sha256"]},
+            "role": "archive-keyring",
+        },
+    ]
+    recipe = {
+        "archiveUrl": snapshot["archiveUrl"],
+        "suite": image["suite"],
+        "components": list(image["components"]),
+        "variant": image["variant"],
+        "include": list(image["include"]),
+        "fixups": applied,
+        "removed": removed,
+    }
+    return materials, omitted, recipe
+
+
+def image_epoch(image: dict[str, Any]) -> int:
+    lock = json.loads(LOCK_PATH.read_bytes())
+    return int(image.get("sourceDateEpoch", lock["sourceDateEpoch"]))
+
+
 def file_record(root: Path, path: Path) -> dict[str, Any]:
     relative = path.relative_to(root).as_posix()
     metadata = path.lstat()
@@ -938,6 +1048,7 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         materials: list[dict[str, Any]]
         omitted: list[str]
         v4_source_archive: Path | None = None
+        apt_snapshot_recipe: dict[str, Any] | None = None
 
         if image["kind"] == "termux-rootfs":
             source_archive = download(
@@ -964,6 +1075,10 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
         elif image["kind"] == "oci":
             root.mkdir()
             materials, omitted = materialize_oci(image, root, cache_dir)
+        elif image["kind"] == "apt-snapshot":
+            materials, omitted, apt_snapshot_recipe = materialize_apt_snapshot(
+                image, root, cache_dir, work
+            )
         else:
             raise BuildError(f"unsupported image kind: {image['kind']}")
 
@@ -1019,6 +1134,8 @@ def build(target: str, output_dir: Path, cache_dir: Path) -> list[Path]:
                 "analysisStagingOmittedSpecialFiles": sorted(omitted),
             },
         }
+        if apt_snapshot_recipe is not None:
+            in_image_provenance["aptSnapshot"] = apt_snapshot_recipe
         provenance_destination.write_bytes(canonical_json(in_image_provenance))
         os.chmod(provenance_destination, 0o644)
 
