@@ -300,6 +300,11 @@ class CanaryContractTests(unittest.TestCase):
                 "liskov-runtime-image-debian-trixie-snapshot-aarch64.tar.xz",
                 "ac69afc5c8737db519f653f42f150c814cfd2c1173bececa15fc32258a8e2f9a",
             ),
+            "liskov-runtime-images-rc13-snapshot-canary-b": (
+                "canary-debian-trixie-snapshot-rc13-b.yml",
+                "liskov-runtime-image-debian-trixie-snapshot-aarch64.tar.xz",
+                "ac69afc5c8737db519f653f42f150c814cfd2c1173bececa15fc32258a8e2f9a",
+            ),
             "liskov-runtime-images-rc13-oci-canary": (
                 "canary-debian-trixie-oci-rc13.yml",
                 "liskov-runtime-image-debian-trixie-aarch64.tar.xz",
@@ -340,7 +345,8 @@ class CanaryContractTests(unittest.TestCase):
             )
             self.assertIn(f"application-id: {name}", workflow)
         # The A/B pair must compete for the same processors (ADR-0041).
-        self.assertEqual(placements[0], placements[1])
+        for placement in placements[1:]:
+            self.assertEqual(placement, placements[0])
 
     def test_debian_workflow_uses_the_canonical_repository_policy_path(self) -> None:
         manifest_name = "liskov-runtime-images-v5-canary.policy.json"
