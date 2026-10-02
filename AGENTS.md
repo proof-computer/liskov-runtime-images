@@ -7,11 +7,12 @@ images curated for Liskov-managed Acurast Cargo/PRoot workloads.
 
 - Keep source materials immutable and digest-pinned in `sources.lock.json`.
 - Treat `v4-control` as a compatibility control, not the maintained default.
-- Build the maintained image from the exact single-platform OCI manifest
-  digest, never from a mutable tag.
-- Build a snapshot-lane image only from an immutable archive snapshot
-  timestamp, a pinned keyring digest and a digest-pinned builder container;
-  every host-derived file it would inherit is a declared fixup.
+- The maintained default is `debian-trixie-snapshot` (ADR-0171). Build a
+  snapshot-lane image only from an immutable archive snapshot timestamp, a
+  pinned keyring digest and a digest-pinned builder container; every
+  host-derived file it would inherit is a declared fixup.
+- Treat the OCI-derived `debian-trixie` lane as the A/B control. Build it from
+  the exact single-platform OCI manifest digest, never from a mutable tag.
 - Overlay only the source and deterministically compiled AArch64 shared object
   for the documented Acurast `getifaddrs` compatibility override and the
   generated Liskov provenance record.

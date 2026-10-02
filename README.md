@@ -14,14 +14,16 @@ snapshots one verified helper beside the generated `acurast.sh` launch bundle.
 
 | Target | Upstream trust root | Status |
 | --- | --- | --- |
-| `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | Maintained default; exact `v0.1.0-rc.12` bytes promoted after the bounded Acurast A/B canary |
+| `debian-trixie-snapshot` | Debian `trixie` bootstrapped by a pinned `mmdebstrap` from an immutable `snapshot.debian.org` timestamp, inside a digest-pinned builder container | **Maintained default**; exact `v0.1.0-rc.13` bytes promoted after the bounded Acurast A/B canary (ADR-0171). A security rebuild is a snapshot-timestamp bump |
+| `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | A/B control; previously the maintained default (`v0.1.0-rc.12`, byte-identical in `v0.1.0-rc.13`) |
 | `v4-control` | Exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64 release asset | Compatibility control only |
-| `debian-trixie-snapshot` | Debian `trixie` bootstrapped by a pinned `mmdebstrap` from an immutable `snapshot.debian.org` timestamp, inside a digest-pinned builder container | Release candidate for the Liskov-authored lane (ADR-0171); a security rebuild is a snapshot-timestamp bump |
 
 Acurast consumes an image URL and SHA-256, not a PRoot-Distro major version.
 PRoot-Distro v5 no longer publishes distribution rootfs assets; it materializes
-OCI images instead. The maintained track therefore uses the official Debian
-OCI image as its trust root and records PRoot-Distro v5.5.0 as a compatibility
+OCI images instead, and neither upstream carries a security rebuild of a
+published release. The maintained track therefore builds Debian itself from a
+pinned archive snapshot (see *The snapshot lane* below). The OCI lane is kept
+as the A/B control and records PRoot-Distro v5.5.0 as a compatibility
 reference. It does not publish host-specific output from PRoot-Distro
 `install` or its restore-oriented `backup` format.
 
@@ -194,17 +196,24 @@ closed. Release publication contains no construction or QEMU/PRoot job.
 
 Successful local and CI smoke tests are necessary but not sufficient for
 support. A release candidate becomes the maintained default only after a
-bounded Acurast A/B canary: v4 control first, then the OCI-derived candidate,
-with signed Liskov runtime contact and downstream command execution observed.
+bounded Acurast A/B canary: a control image and the candidate on the same
+manager pool, each with signed Liskov runtime contact, downstream command
+execution, and finalized Acurast execution success observed.
 
-The maintained default is the helperless Debian archive from
-`v0.1.0-rc.12`, SHA-256
-`0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377`.
-It was promoted without rebuilding after both exact release lanes crossed
-signed runtime contact, customer-command handoff, and finalized Acurast
-execution success. The release tag remains `v0.1.0-rc.12` because its checked
-build manifest, checksums, and attestations are version-bound; the GitHub
-release status and this pointer carry the maintained-default classification.
+The maintained default is the Liskov-authored `debian-trixie-snapshot`
+archive from `v0.1.0-rc.13`, SHA-256
+`ac69afc5c8737db519f653f42f150c814cfd2c1173bececa15fc32258a8e2f9a`,
+attested from source commit `e061dfd03f430657b4e937d91cfc804b1670d0f5`.
+It was promoted without rebuilding on 2026-10-02 after it and the OCI-derived
+`debian-trixie` control (`0639e88d…8377`) both crossed signed runtime contact,
+customer-command handoff, and corroborated Acurast execution success on the
+same processor (jobs 191395 and 191339). The release tag remains
+`v0.1.0-rc.13` because its checked build manifest, checksums, and
+attestations are version-bound; the GitHub release notes and this pointer
+carry the maintained-default classification.
+
+The previous maintained default, `debian-trixie` from `v0.1.0-rc.12`
+(`0639e88d…8377`), stays published and immutable.
 
 ## Updating inputs
 
