@@ -106,16 +106,16 @@ jobs:
           set -euo pipefail
           notes_file="${RUNNER_TEMP}/release-notes.md"
           if [[ "${TAG}" == *-rc.* ]]; then
-            debian_status="release candidate; promotion remains gated on the bounded Acurast A/B canary"
+            snapshot_status="release candidate; promotion remains gated on the bounded Acurast A/B canary"
           else
-            debian_status="maintained OCI-derived image, promoted after its bounded Acurast A/B canary"
+            snapshot_status="maintained default, promoted after its bounded Acurast A/B canary"
           fi
           {
             echo "Digest-pinned AArch64 rootfs images for Liskov-managed Acurast Cargo/PRoot workloads."
             echo
-            echo "- \`debian-trixie\` is the ${debian_status}."
+            echo "- \`debian-trixie-snapshot\` is the Liskov-authored snapshot-lane ${snapshot_status} (ADR-0171)."
+            echo "- \`debian-trixie\` is the OCI-derived A/B control."
             echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
-            echo "- \`debian-trixie-snapshot\` is the Liskov-authored snapshot-lane candidate (ADR-0171); it is not promoted until its own bounded Acurast canary passes."
             echo "- Images do not embed the runtime-contact helper; Liskov supplies an independently verified helper in each generated launch bundle."
             echo "- Every image includes the source and AArch64 shared object for the documented Acurast \`getifaddrs\` override, and publishes an SPDX SBOM, file inventory, overlay ledger, provenance record, commit-bound build manifest, checksums, and GitHub attestation."
             echo

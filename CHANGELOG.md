@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Promote the exact `v0.1.0-rc.13` `debian-trixie-snapshot` archive
+  (`ac69afc5…2f9a`) to maintained default without rebuilding, after the
+  bounded A/B canary on 2026-10-02 (jobs 191339 control and 191395
+  candidate, same processor). `debian-trixie` becomes the A/B control.
+
 ## v0.1.0-rc.13
 
 - Add the `debian-trixie-snapshot` release candidate: an `apt-snapshot` source
