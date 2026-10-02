@@ -10,7 +10,8 @@
       "runtime-image",
       "canary",
       "debian-trixie-snapshot",
-      "v0.1.0-rc.13"
+      "v0.1.0-rc.13",
+      "attempt-2"
     ]
   },
   "release": {
@@ -29,7 +30,7 @@
     }
   },
   "runtime": {
-    "command": "/bin/sh -c 'echo liskov-runtime-images-rc13-debian-trixie-snapshot-canary; exec sleep 420'",
+    "command": "/bin/sh -c 'echo liskov-runtime-images-rc13-debian-trixie-snapshot-canary-attempt-2; exec sleep 420'",
     "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {
