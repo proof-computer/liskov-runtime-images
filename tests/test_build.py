@@ -293,40 +293,54 @@ class CanaryContractTests(unittest.TestCase):
                 workflow,
             )
 
-    def test_snapshot_rc13_canary_is_bounded_and_pinned_to_the_released_archive(self) -> None:
-        name = "liskov-runtime-images-rc13-snapshot-canary"
-        manifest = self.load_manifest(f"{name}.policy.json")
-        self.assertEqual(manifest["applicationId"], name)
-        self.assertEqual(manifest["runtime"]["maxGenerations"], 1)
-        self.assertEqual(manifest["runtime"]["resources"]["networkRequestQuota"], 0)
-        self.assertNotIn("liskov-runtime-contact", manifest["runtime"]["command"])
-        self.assertEqual(
-            manifest["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"], 0
-        )
-        self.assertEqual(
-            manifest["deployment"]["spend"],
-            {
-                "maxRewardPlanckPerJob": "40000000000",
-                "maxNativeFeePlanckPerJob": "10000000000",
-            },
-        )
-        self.assertFalse(manifest["observability"]["logs"]["enabled"])
-        builder = manifest["release"]["builder"]
-        self.assertEqual(builder["allowedRefs"], ["refs/heads/main"])
-        self.assertEqual(builder["manifestPath"], f".liskov/{name}.policy.json")
-        workflow = (
-            REPOSITORY_ROOT / ".github/workflows/canary-debian-trixie-snapshot-rc13.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "/v0.1.0-rc.13/liskov-runtime-image-debian-trixie-snapshot-aarch64.tar.xz",
-            workflow,
-        )
-        self.assertRegex(workflow, r"expected-sha256: [0-9a-f]{64}\n")
-        self.assertIn(
-            "attestation-source-digest: e061dfd03f430657b4e937d91cfc804b1670d0f5",
-            workflow,
-        )
-        self.assertIn(f"application-id: {name}", workflow)
+    def test_rc13_ab_canaries_are_bounded_logged_and_pinned_to_released_archives(self) -> None:
+        cases = {
+            "liskov-runtime-images-rc13-snapshot-canary": (
+                "canary-debian-trixie-snapshot-rc13.yml",
+                "liskov-runtime-image-debian-trixie-snapshot-aarch64.tar.xz",
+                "ac69afc5c8737db519f653f42f150c814cfd2c1173bececa15fc32258a8e2f9a",
+            ),
+            "liskov-runtime-images-rc13-oci-canary": (
+                "canary-debian-trixie-oci-rc13.yml",
+                "liskov-runtime-image-debian-trixie-aarch64.tar.xz",
+                "0639e88db6b46cef6091acafe35dfb1b59c5e354463d969f1a9509451d118377",
+            ),
+        }
+        placements = []
+        for name, (workflow_name, archive, digest) in cases.items():
+            manifest = self.load_manifest(f"{name}.policy.json")
+            self.assertEqual(manifest["applicationId"], name)
+            self.assertEqual(manifest["runtime"]["maxGenerations"], 1)
+            self.assertEqual(manifest["runtime"]["resources"]["networkRequestQuota"], 0)
+            self.assertNotIn("liskov-runtime-contact", manifest["runtime"]["command"])
+            self.assertEqual(
+                manifest["deployment"]["lifecycle"]["recovery"]["launch"]["maxRetries"], 0
+            )
+            self.assertEqual(
+                manifest["deployment"]["spend"],
+                {
+                    "maxRewardPlanckPerJob": "40000000000",
+                    "maxNativeFeePlanckPerJob": "10000000000",
+                },
+            )
+            self.assertTrue(manifest["observability"]["logs"]["enabled"])
+            builder = manifest["release"]["builder"]
+            self.assertEqual(builder["allowedRefs"], ["refs/heads/main"])
+            self.assertEqual(builder["manifestPath"], f".liskov/{name}.policy.json")
+            self.assertTrue(builder["workflowRef"].endswith(f"/{workflow_name}@refs/heads/main"))
+            placements.append(manifest["deployment"]["placement"])
+            workflow = (
+                REPOSITORY_ROOT / ".github" / "workflows" / workflow_name
+            ).read_text(encoding="utf-8")
+            self.assertIn(f"/v0.1.0-rc.13/{archive}", workflow)
+            self.assertIn(f"expected-sha256: {digest}", workflow)
+            self.assertIn(
+                "attestation-source-digest: e061dfd03f430657b4e937d91cfc804b1670d0f5",
+                workflow,
+            )
+            self.assertIn(f"application-id: {name}", workflow)
+        # The A/B pair must compete for the same processors (ADR-0041).
+        self.assertEqual(placements[0], placements[1])
 
     def test_debian_workflow_uses_the_canonical_repository_policy_path(self) -> None:
         manifest_name = "liskov-runtime-images-v5-canary.policy.json"

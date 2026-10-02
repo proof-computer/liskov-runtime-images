@@ -1,17 +1,17 @@
 {
   "schema": "proof.liskov.application-manifest",
   "schemaVersion": 4,
-  "applicationId": "liskov-runtime-images-rc13-snapshot-canary",
+  "applicationId": "liskov-runtime-images-rc13-oci-canary",
   "metadata": {
     "appType": "background-worker",
-    "description": "Single-generation bounded canary for the Liskov-authored debian-trixie-snapshot rootfs from v0.1.0-rc.13 (ADR-0171).",
+    "description": "Single-generation bounded A/B control: the rc.13 OCI-derived debian-trixie rootfs on the same manager pool as the snapshot canary (ADR-0041, ADR-0171).",
     "labels": [
       "liskov",
       "runtime-image",
       "canary",
-      "debian-trixie-snapshot",
+      "debian-trixie",
       "v0.1.0-rc.13",
-      "attempt-3",
+      "ab-control",
       "logs"
     ]
   },
@@ -26,12 +26,12 @@
       "allowedRefs": [
         "refs/heads/main"
       ],
-      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-debian-trixie-snapshot-rc13.yml@refs/heads/main",
-      "manifestPath": ".liskov/liskov-runtime-images-rc13-snapshot-canary.policy.json"
+      "workflowRef": "proof-computer/liskov-runtime-images/.github/workflows/canary-debian-trixie-oci-rc13.yml@refs/heads/main",
+      "manifestPath": ".liskov/liskov-runtime-images-rc13-oci-canary.policy.json"
     }
   },
   "runtime": {
-    "command": "/bin/sh -c 'echo liskov-runtime-images-rc13-debian-trixie-snapshot-canary-attempt-3; exec sleep 420'",
+    "command": "/bin/sh -c 'echo liskov-runtime-images-rc13-debian-trixie-oci-control; exec sleep 420'",
     "maxGenerations": 1,
     "role": "runtime-image-canary",
     "resources": {
