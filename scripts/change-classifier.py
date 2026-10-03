@@ -69,7 +69,11 @@ def is_material_path(path: str) -> bool:
 
 
 def is_fast_path(path: str) -> bool:
-    return path in FAST_EXACT or path.startswith(FAST_PREFIXES)
+    return (
+        path in FAST_EXACT
+        or path.startswith(FAST_PREFIXES)
+        or (path.startswith("docs/") and path.endswith(".md"))
+    )
 
 
 def material_paths(root: Path) -> list[str]:

@@ -58,6 +58,7 @@ class ChangeClassifierTests(unittest.TestCase):
             "LICENSE",
             "Makefile",
             "README.md",
+            "docs/proot-fixup-ledger.md",
             "SECURITY.md",
             "THIRD_PARTY_NOTICES.md",
             ".github/workflows/ci.yml",
@@ -80,6 +81,8 @@ class ChangeClassifierTests(unittest.TestCase):
             "tests/bridge-smoke-server.py",
             "tests/runtime-contact-release.json",
             "unexpected/new-input.txt",
+            "docs/build.py",
+            "docs/release-policy.json",
         ]
         for path in material_paths:
             with self.subTest(path=path):
