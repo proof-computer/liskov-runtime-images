@@ -68,6 +68,8 @@ The [PRoot-Distro fixup ledger](docs/proot-fixup-ledger.md) records the
 per-distro keep/drop decisions. These three paths remain the whole common
 overlay; snapshot-specific filesystem fixups are declared separately in
 [`sources.lock.json`](sources.lock.json).
+The [Ubuntu Resolute snapshot source contract](docs/ubuntu-resolute-snapshot-source.md)
+records the verified arm64 archive pockets and keyring for the next build lane.
 
 The Apache-2.0 shim is compiled deterministically from the included source and
 implements the loopback-only workaround documented for Cargo/PRoot by
