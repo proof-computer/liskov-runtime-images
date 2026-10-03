@@ -64,6 +64,11 @@ The base filesystem receives exactly these Liskov-owned paths:
 /usr/share/liskov-runtime-images/provenance.json
 ```
 
+The [PRoot-Distro fixup ledger](docs/proot-fixup-ledger.md) records the
+per-distro keep/drop decisions. These three paths remain the whole common
+overlay; snapshot-specific filesystem fixups are declared separately in
+[`sources.lock.json`](sources.lock.json).
+
 The Apache-2.0 shim is compiled deterministically from the included source and
 implements the loopback-only workaround documented for Cargo/PRoot by
 [Acurast](https://docs.acurast.com/developers/build/cargo-runtime-environment/#network-interfaces-getifaddrs).
