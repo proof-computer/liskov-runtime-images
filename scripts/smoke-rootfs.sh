@@ -32,11 +32,16 @@ esac
 
 smoke_root=$(mktemp -d "${TMPDIR:-/tmp}/liskov-runtime-images-smoke.XXXXXX")
 bridge_pid=
+tls_server_pid=
 
 cleanup() {
   if [[ -n "${bridge_pid:-}" ]]; then
     kill "${bridge_pid}" 2>/dev/null || true
     wait "${bridge_pid}" 2>/dev/null || true
+  fi
+  if [[ -n "${tls_server_pid:-}" ]]; then
+    kill "${tls_server_pid}" 2>/dev/null || true
+    wait "${tls_server_pid}" 2>/dev/null || true
   fi
   if [[ -n "${smoke_root:-}" && -d "${smoke_root}" ]]; then
     rm -rf -- "${smoke_root}"
@@ -110,6 +115,128 @@ if "@BRIDGE_PROBE_ARGUMENT@" in rendered:
 pathlib.Path(sys.argv[2]).write_text(rendered, encoding="utf-8")
 PY
   chmod 0755 "${launcher}"
+}
+
+run_in_rootfs() {
+  proot "${qemu_args[@]}" -0 \
+    -r "${rootfs}" \
+    -b /dev \
+    -b /proc \
+    -b /sys \
+    -b "${fixture_dir}:/tmp/liskov-tls-fixtures" \
+    -w / \
+    "$@"
+}
+
+prove_snapshot_tls_trust() {
+  local sbom verification_time archive_url live_status live_class
+  local untrusted_status missing_status port bundle held
+  sbom="$(dirname "${archive}")/$(basename "${archive}" .tar.xz).spdx.json"
+  fixture_dir="${repository_root}/tests/fixtures/tls"
+  python3 "${repository_root}/scripts/snapshot-tls-trust.py" support \
+    --lock "${repository_root}/sources.lock.json" \
+    --sbom "${sbom}" \
+    --rootfs "${rootfs}" \
+    --target "${target}"
+  verification_time=$(python3 "${repository_root}/scripts/snapshot-tls-trust.py" \
+    verification-time --fixtures "${fixture_dir}")
+  archive_url=$(python3 "${repository_root}/scripts/snapshot-tls-trust.py" \
+    archive-url --lock "${repository_root}/sources.lock.json")
+
+  run_in_rootfs /bin/sh -c \
+    'test -x /usr/bin/openssl && test -x /usr/bin/curl && test -s /etc/ssl/certs/ca-certificates.crt'
+
+  run_in_rootfs \
+    /usr/bin/openssl verify \
+    -attime "${verification_time}" \
+    -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -untrusted /tmp/liskov-tls-fixtures/intermediates.pem \
+    /tmp/liskov-tls-fixtures/leaf.pem
+
+  tls_ready="${smoke_root}/untrusted-tls.port"
+  python3 "${repository_root}/scripts/untrusted-tls-server.py" \
+    --cert "${fixture_dir}/untrusted-server.pem" \
+    --key "${fixture_dir}/untrusted-server.key" \
+    --ready-file "${tls_ready}" &
+  tls_server_pid=$!
+  for _ in {1..100}; do
+    [[ -f "${tls_ready}" ]] && break
+    sleep 0.05
+  done
+  [[ -f "${tls_ready}" ]] || {
+    echo "untrusted TLS server did not become ready" >&2
+    exit 1
+  }
+  port="$(cat "${tls_ready}")"
+  set +e
+  run_in_rootfs \
+    /usr/bin/curl \
+    --http1.1 \
+    --fail \
+    --silent \
+    --show-error \
+    --max-time 10 \
+    --output /dev/null \
+    --proto '=https' \
+    "https://127.0.0.1:${port}/"
+  untrusted_status=$?
+  set -e
+  kill "${tls_server_pid}" 2>/dev/null || true
+  wait "${tls_server_pid}" 2>/dev/null || true
+  tls_server_pid=
+  if [[ "${untrusted_status}" -ne 60 ]]; then
+    echo "untrusted fixture chain was not rejected by the shipped trust store (curl ${untrusted_status})" >&2
+    exit 1
+  fi
+
+  set +e
+  run_in_rootfs \
+    /usr/bin/curl \
+    --http1.1 \
+    --fail \
+    --silent \
+    --show-error \
+    --max-time 30 \
+    --output /dev/null \
+    --proto '=https' \
+    "${archive_url}"
+  live_status=$?
+  set -e
+  live_class=$(python3 "${repository_root}/scripts/snapshot-tls-trust.py" \
+    classify-curl --status "${live_status}")
+  case "${live_class}" in
+    ok) ;;
+    network)
+      echo "debian archive request failed because the network failed (curl ${live_status}); this is not a missing-trust failure" >&2
+      exit 1
+      ;;
+    trust)
+      echo "debian archive request failed certificate verification (curl ${live_status}); the shipped trust store rejected the chain" >&2
+      exit 1
+      ;;
+    *)
+      echo "debian archive request failed with unexpected curl status ${live_status}" >&2
+      exit 1
+      ;;
+  esac
+
+  bundle="${rootfs}/etc/ssl/certs/ca-certificates.crt"
+  held="${bundle}.held-by-smoke"
+  mv "${bundle}" "${held}"
+  set +e
+  run_in_rootfs \
+    /usr/bin/openssl verify \
+    -attime "${verification_time}" \
+    -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -untrusted /tmp/liskov-tls-fixtures/intermediates.pem \
+    /tmp/liskov-tls-fixtures/leaf.pem
+  missing_status=$?
+  set -e
+  mv "${held}" "${bundle}"
+  if [[ "${missing_status}" -eq 0 ]]; then
+    echo "missing CA bundle unexpectedly verified the fixture chain" >&2
+    exit 1
+  fi
 }
 
 file "${helper}" | grep -Eq 'ARM aarch64|ARM64'
@@ -271,6 +398,10 @@ if [[ "${LISKOV_SMOKE_HTTPS:-0}" == 1 ]]; then
     echo "bridge probe smoke did not cover the expected bounded methods" >&2
     exit 1
   fi
+fi
+
+if [[ "${target}" == "debian-trixie-snapshot" ]]; then
+  prove_snapshot_tls_trust
 fi
 
 echo "smoke passed: ${target}"
