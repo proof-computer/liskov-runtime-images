@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import io
 import json
 import os
+import subprocess
+import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -22,6 +26,12 @@ INSPECT_SPEC = importlib.util.spec_from_file_location(
 assert INSPECT_SPEC is not None and INSPECT_SPEC.loader is not None
 inspect_artifact = importlib.util.module_from_spec(INSPECT_SPEC)
 INSPECT_SPEC.loader.exec_module(inspect_artifact)
+TRUST_SPEC = importlib.util.spec_from_file_location(
+    "snapshot_tls_trust", REPOSITORY_ROOT / "scripts/snapshot-tls-trust.py"
+)
+assert TRUST_SPEC is not None and TRUST_SPEC.loader is not None
+snapshot_tls_trust = importlib.util.module_from_spec(TRUST_SPEC)
+TRUST_SPEC.loader.exec_module(snapshot_tls_trust)
 
 
 class SourceLockTests(unittest.TestCase):
@@ -528,6 +538,238 @@ class ReproducibilityTests(unittest.TestCase):
                 records[0]["sha256"],
                 build_image.sha256_bytes(b"symlink:target"),
             )
+
+
+class SnapshotTlsTrustTests(unittest.TestCase):
+    def snapshot_image(self) -> dict[str, object]:
+        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes())
+        image = lock["images"]["debian-trixie-snapshot"]
+        self.assertIsInstance(image, dict)
+        return image
+
+    def test_snapshot_include_lists_ca_certificates_without_an_overlay(self) -> None:
+        image = self.snapshot_image()
+        include = image["include"]
+        self.assertIsInstance(include, list)
+        self.assertIn("ca-certificates", include)
+        for path in build_image.OVERLAY_PATHS:
+            self.assertNotIn("ssl/certs", path)
+            self.assertNotIn("ca-certificates", path)
+        url = snapshot_tls_trust.debian_archive_url(
+            {"images": {"debian-trixie-snapshot": image}}
+        )
+        self.assertEqual(url, image["snapshot"]["inReleaseUrl"])
+        self.assertTrue(url.startswith("https://"))
+
+    def test_spdx_records_installed_ca_certificates(self) -> None:
+        image = self.snapshot_image()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            status = root / "var/lib/dpkg/status"
+            status.parent.mkdir(parents=True)
+            status.write_text(
+                "Package: ca-certificates\n"
+                "Status: install ok installed\n"
+                "Version: 20250419\n"
+                "Architecture: all\n",
+                encoding="utf-8",
+            )
+            document = build_image.spdx_document(
+                "debian-trixie-snapshot",
+                image,
+                "a" * 64,
+                root,
+                "b" * 64,
+                "2026-09-20T00:00:00Z",
+            )
+            packages = [
+                package
+                for package in document["packages"]
+                if package["name"] == "ca-certificates"
+            ]
+            self.assertEqual(len(packages), 1)
+            self.assertEqual(
+                packages[0]["externalRefs"][0]["referenceLocator"],
+                "pkg:deb/debian/ca-certificates@20250419?arch=all",
+            )
+
+    def trusted_root(self, root: Path) -> dict[str, object]:
+        status = root / "var/lib/dpkg/status"
+        status.parent.mkdir(parents=True)
+        status.write_text(
+            "Package: ca-certificates\n"
+            "Status: install ok installed\n"
+            "Version: 20250419\n"
+            "Architecture: all\n",
+            encoding="utf-8",
+        )
+        certs = root / "etc/ssl/certs"
+        certs.mkdir(parents=True)
+        (certs / "ca-certificates.crt").write_text("bundle\n", encoding="utf-8")
+        os.symlink(
+            "/usr/share/ca-certificates/example.crt",
+            certs / "3513523f.0",
+        )
+        return {
+            "packages": [
+                {
+                    "name": "ca-certificates",
+                    "externalRefs": [
+                        {
+                            "referenceLocator": (
+                                "pkg:deb/debian/ca-certificates@20250419?arch=all"
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+    def test_support_check_is_snapshot_only(self) -> None:
+        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sbom = self.trusted_root(root)
+            snapshot_tls_trust.assert_snapshot_support(
+                lock, sbom, root, "debian-trixie-snapshot"
+            )
+            for target in ("debian-trixie", "v4-control"):
+                with self.subTest(target=target):
+                    with self.assertRaises(snapshot_tls_trust.TrustProofError):
+                        snapshot_tls_trust.assert_snapshot_support(
+                            lock, sbom, root, target
+                        )
+            (root / "etc/ssl/certs/ca-certificates.crt").unlink()
+            with self.assertRaises(snapshot_tls_trust.TrustProofError):
+                snapshot_tls_trust.assert_snapshot_support(
+                    lock, sbom, root, "debian-trixie-snapshot"
+                )
+
+    def test_curl_status_distinguishes_network_from_missing_trust(self) -> None:
+        self.assertEqual(snapshot_tls_trust.classify_curl_status(0), "ok")
+        self.assertEqual(snapshot_tls_trust.classify_curl_status(60), "trust")
+        for status in (6, 7, 28):
+            with self.subTest(status=status):
+                self.assertEqual(
+                    snapshot_tls_trust.classify_curl_status(status),
+                    "network",
+                )
+        self.assertEqual(snapshot_tls_trust.classify_curl_status(35), "unexpected")
+
+    def test_fixtures_pin_a_public_chain_and_a_disposable_ca(self) -> None:
+        fixture_dir = REPOSITORY_ROOT / "tests/fixtures/tls"
+        manifest = json.loads((fixture_dir / "manifest.json").read_bytes())
+        self.assertEqual(
+            manifest["schema"],
+            "proof.liskov.runtime-image.tls-trust-fixtures",
+        )
+        self.assertEqual(manifest["capturedFrom"], "snapshot.debian.org:443")
+        self.assertIsInstance(manifest["verificationTime"], int)
+        self.assertFalse((fixture_dir / "leaf.key").exists())
+        self.assertFalse((fixture_dir / "ca.key").exists())
+        leaf = fixture_dir / manifest["leaf"]
+        dates = subprocess.check_output(
+            ["openssl", "x509", "-in", leaf, "-noout", "-dates"],
+            text=True,
+        )
+        parsed: dict[str, int] = {}
+        for line in dates.splitlines():
+            name, value = line.split("=", 1)
+            moment = dt.datetime.strptime(
+                value, "%b %d %H:%M:%S %Y %Z"
+            ).replace(tzinfo=dt.timezone.utc)
+            parsed[name] = int(moment.timestamp())
+        self.assertLess(parsed["notBefore"], manifest["verificationTime"])
+        self.assertLess(manifest["verificationTime"], parsed["notAfter"])
+        leaf_issuer = subprocess.check_output(
+            ["openssl", "x509", "-in", leaf, "-noout", "-issuer"],
+            text=True,
+        )
+        self.assertNotIn("fixture", leaf_issuer)
+        server = fixture_dir / manifest["untrustedCertificate"]
+        issuer = subprocess.check_output(
+            ["openssl", "x509", "-in", server, "-noout", "-issuer"],
+            text=True,
+        )
+        self.assertIn("Liskov runtime-images fixture CA", issuer)
+        verified = subprocess.run(
+            [
+                "openssl",
+                "verify",
+                "-CAfile",
+                str(fixture_dir / manifest["fixtureCa"]),
+                str(server),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(
+            snapshot_tls_trust.verification_time(fixture_dir),
+            manifest["verificationTime"],
+        )
+
+    def test_fixture_server_is_rejected_by_the_default_trust_store(self) -> None:
+        fixture_dir = REPOSITORY_ROOT / "tests/fixtures/tls"
+        manifest = json.loads((fixture_dir / "manifest.json").read_bytes())
+        with tempfile.TemporaryDirectory() as temporary:
+            ready = Path(temporary) / "port"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "scripts/untrusted-tls-server.py"),
+                    "--cert",
+                    str(fixture_dir / manifest["untrustedCertificate"]),
+                    "--key",
+                    str(fixture_dir / manifest["untrustedKey"]),
+                    "--ready-file",
+                    str(ready),
+                ]
+            )
+            try:
+                for _ in range(100):
+                    if ready.is_file() or process.poll() is not None:
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(ready.is_file(), "untrusted TLS server did not start")
+                result = subprocess.run(
+                    [
+                        "curl",
+                        "--http1.1",
+                        "--fail",
+                        "--silent",
+                        "--show-error",
+                        "--max-time",
+                        "10",
+                        "--output",
+                        "/dev/null",
+                        "--proto",
+                        "=https",
+                        f"https://127.0.0.1:{ready.read_text().strip()}/",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 60, result.stderr)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+
+    def test_smoke_limits_the_proof_to_the_snapshot_target(self) -> None:
+        smoke = (REPOSITORY_ROOT / "scripts/smoke-rootfs.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'if [[ "${target}" == "debian-trixie-snapshot" ]]; then\n'
+            "  prove_snapshot_tls_trust\n"
+            "fi",
+            smoke,
+        )
+        self.assertNotIn("--insecure", smoke)
+        self.assertNotIn("curl -k", smoke)
+        self.assertNotIn("-b /etc/ssl", smoke)
+        self.assertIn("-attime", smoke)
+        self.assertIn("this is not a missing-trust failure", smoke)
 
 
 if __name__ == "__main__":

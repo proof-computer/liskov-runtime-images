@@ -1,0 +1,11 @@
+{
+  "schema": "proof.liskov.runtime-image.tls-trust-fixtures",
+  "schemaVersion": 1,
+  "verificationTime": 1789260339,
+  "capturedFrom": "snapshot.debian.org:443",
+  "leaf": "leaf.pem",
+  "intermediates": "intermediates.pem",
+  "fixtureCa": "ca.pem",
+  "untrustedCertificate": "untrusted-server.pem",
+  "untrustedKey": "untrusted-server.key"
+}
