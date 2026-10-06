@@ -1,8 +1,9 @@
 # Third-party materials
 
-The Apache-2.0 license in this repository applies to the repository's build
-code and documentation. It does not relicense the operating-system packages
-inside generated rootfs images.
+The Functional Source License, SPDX identifier `FSL-1.1-Apache-2.0`, applies
+to this repository's build code, scripts, shim source, and documentation. It
+does not relicense the operating-system packages inside generated rootfs
+images.
 
 The `v4-control` image starts from the exact Ubuntu Questing AArch64 rootfs
 published by Termux PRoot-Distro v4.30.1. PRoot-Distro is GPL-3.0-only; Ubuntu
@@ -14,8 +15,8 @@ respective licenses.
 
 Published rootfs images do not contain `liskov-runtime-contact` or its license.
 Smoke validation fetches one digest-pinned release from
-`proof-computer/liskov-runtime-cargo` under Apache-2.0 and injects it only into
-an ephemeral test root.
+`proof-computer/liskov-runtime-cargo` under the licence its own release carries
+and injects it only into an ephemeral test root.
 
 Each release includes an SPDX SBOM and an exact source/overlay provenance
 record. The files installed by Debian and Ubuntu contain the authoritative
