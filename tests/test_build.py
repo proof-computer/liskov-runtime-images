@@ -1351,6 +1351,52 @@ class AptSnapshotPocketTests(unittest.TestCase):
         )
         self.assertIn('"${LISKOV_APT_SUITE}" - "${LISKOV_APT_ARCHIVE_URL}"', one_pocket)
         self.assertIn("--components=", one_pocket)
+        self.assertNotIn("--setup-hook=", one_pocket)
+
+    def test_multi_pocket_setup_hook_creates_keyring_dir_before_copy_in(self) -> None:
+        script = (REPOSITORY_ROOT / "scripts/mmdebstrap-docker.sh").read_text(encoding="utf-8")
+        multi, _one_pocket = script.split(
+            "for variable in \\\n  LISKOV_APT_BUILDER_IMAGE \\\n",
+            1,
+        )
+        hook_lines = [
+            line.strip()
+            for line in multi.splitlines()
+            if line.strip().startswith("--setup-hook=")
+        ]
+        self.assertEqual(
+            hook_lines,
+            [
+                '--setup-hook="mkdir -p \\"\\$1$(dirname "${signed_by}")\\"" \\',
+                '--setup-hook="copy-in ${signed_by} $(dirname "${signed_by}")" \\',
+            ],
+        )
+        bodies = [line.removesuffix("\\").strip() for line in hook_lines]
+        continued = [f"{body} \\" for body in bodies[:-1]]
+        probe = "\n".join(
+            [
+                "signed_by=/usr/share/keyrings/ubuntu-archive-keyring.gpg",
+                "set -- \\",
+                *continued,
+                bodies[-1],
+                'printf "%s\\n" "$#"',
+                'printf "%s\\n" "$@"',
+            ]
+        )
+        completed = subprocess.run(
+            ["sh", "-eu", "-c", probe],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            [
+                "2",
+                '--setup-hook=mkdir -p "$1/usr/share/keyrings"',
+                "--setup-hook=copy-in /usr/share/keyrings/ubuntu-archive-keyring.gpg /usr/share/keyrings",
+            ],
+        )
 
 
 if __name__ == "__main__":

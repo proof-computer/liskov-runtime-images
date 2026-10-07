@@ -114,6 +114,7 @@ EOF
         --keyring="${signed_by}" \
         --aptopt="Acquire::Check-Valid-Until \"false\"" \
         --skip=check/signed-by \
+        --setup-hook="mkdir -p \"\$1$(dirname "${signed_by}")\"" \
         --setup-hook="copy-in ${signed_by} $(dirname "${signed_by}")" \
         --logfile=/dev/stderr \
         "${LISKOV_APT_SUITE}" - "$@"
