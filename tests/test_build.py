@@ -12,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 SPEC = importlib.util.spec_from_file_location(
@@ -811,6 +812,591 @@ class SnapshotTlsTrustTests(unittest.TestCase):
         self.assertNotIn("-b /etc/ssl", smoke)
         self.assertIn("-attime", smoke)
         self.assertIn("this is not a missing-trust failure", smoke)
+
+
+class AptSnapshotPocketTests(unittest.TestCase):
+    _gpg_dir: Path
+    _gpg_env: dict[str, str]
+    _keyring: Path
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._gpg_dir = Path(tempfile.mkdtemp(prefix="liskov-pocket-gpg-"))
+        os.chmod(cls._gpg_dir, 0o700)
+        cls._gpg_env = {**os.environ, "GNUPGHOME": str(cls._gpg_dir)}
+        subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--pinentry-mode",
+                "loopback",
+                "--passphrase",
+                "",
+                "--quick-gen-key",
+                "Liskov Pocket Test <pocket@example.invalid>",
+                "ed25519",
+                "sign",
+                "never",
+            ],
+            check=True,
+            env=cls._gpg_env,
+            capture_output=True,
+        )
+        cls._keyring = cls._gpg_dir / "archive.gpg"
+        subprocess.run(
+            ["gpg", "--batch", "--export", "--output", str(cls._keyring)],
+            check=True,
+            env=cls._gpg_env,
+            capture_output=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._gpg_dir)
+
+    def _sign(self, body: str) -> bytes:
+        completed = subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--pinentry-mode",
+                "loopback",
+                "--passphrase",
+                "",
+                "--clearsign",
+            ],
+            input=body.encode(),
+            check=True,
+            env=self._gpg_env,
+            capture_output=True,
+        )
+        return completed.stdout
+
+    def _ar(self, members: list[tuple[str, bytes]]) -> bytes:
+        parts = [b"!<arch>\n"]
+        for name, payload in members:
+            header = (
+                f"{name}/".ljust(16).encode("ascii")
+                + b"0           "
+                + b"0     "
+                + b"0     "
+                + b"100644  "
+                + str(len(payload)).encode("ascii").rjust(10)
+                + b"`\n"
+            )
+            self.assertEqual(len(header), 60)
+            parts.append(header)
+            parts.append(payload)
+            if len(payload) % 2:
+                parts.append(b"\n")
+        return b"".join(parts)
+
+    def _deb(self, member: str, payload: bytes, compression: str = "gz") -> bytes:
+        buffer = io.BytesIO()
+        mode = "w:gz" if compression == "gz" else "w"
+        with tarfile.open(fileobj=buffer, mode=mode) as archive:
+            info = tarfile.TarInfo(name=f"./{member}")
+            info.size = len(payload)
+            info.mode = 0o644
+            info.mtime = 0
+            archive.addfile(info, io.BytesIO(payload))
+        data_name = "data.tar.gz" if compression == "gz" else "data.tar"
+        return self._ar(
+            [
+                ("debian-binary", b"2.0\n"),
+                (data_name, buffer.getvalue()),
+            ]
+        )
+
+    def _release(self, suite: str, index: bytes, *, codename: str = "resolute") -> str:
+        digest = build_image.sha256_bytes(index)
+        return (
+            "Origin: Ubuntu\n"
+            f"Suite: {suite}\n"
+            f"Codename: {codename}\n"
+            "Components: main\n"
+            "Architectures: arm64\n"
+            "SHA256:\n"
+            f" {digest} {len(index)} main/binary-arm64/Packages.xz\n"
+        )
+
+    def _pocket(self, suite: str, timestamp: str = "20261001T000000Z") -> dict[str, str]:
+        archive = f"https://snapshot.ubuntu.com/ubuntu/{timestamp}/"
+        return {
+            "suite": suite,
+            "archiveUrl": archive,
+            "inReleaseUrl": f"{archive}dists/{suite}/InRelease",
+            "inReleaseSha256": "0" * 64,
+        }
+
+    def _image(self, pockets: list[dict[str, object]]) -> dict[str, object]:
+        return {
+            "distribution": "ubuntu",
+            "suite": "resolute",
+            "architecture": "arm64",
+            "components": ["main"],
+            "variant": "apt",
+            "include": ["ca-certificates", "curl"],
+            "builder": {
+                "repository": "library/debian",
+                "imageDigest": "sha256:" + ("ab" * 32),
+                "mmdebstrapPackage": "mmdebstrap",
+                "mmdebstrapVersion": "1.5.7-1+deb13u1",
+            },
+            "foreignKeyring": {
+                "packageUrl": (
+                    "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/"
+                    "pool/main/u/ubuntu-keyring/ubuntu-keyring_2023.11.28.1build1_all.deb"
+                ),
+                "packageSha256": "0" * 64,
+                "member": "usr/share/keyrings/ubuntu-archive-keyring.gpg",
+                "sha256": "0" * 64,
+            },
+            "pockets": pockets,
+            "fixups": {},
+            "removals": [],
+        }
+
+    def _fixture(self) -> tuple[dict[str, object], dict[str, bytes]]:
+        suites = ("resolute", "resolute-updates", "resolute-security")
+        indexes = {
+            suite: f"Package: {suite}\n".encode() for suite in suites
+        }
+        pockets = []
+        files: dict[str, bytes] = {}
+        for suite in suites:
+            pocket = self._pocket(suite)
+            signed = self._sign(self._release(suite, indexes[suite]))
+            pocket["inReleaseSha256"] = build_image.sha256_bytes(signed)
+            pockets.append(pocket)
+            files[pocket["inReleaseUrl"]] = signed
+            index_name = "main/binary-arm64/Packages.xz"
+            files[f"{pocket['archiveUrl']}dists/{suite}/{index_name}"] = indexes[suite]
+        keyring = self._keyring.read_bytes()
+        deb = self._deb("usr/share/keyrings/ubuntu-archive-keyring.gpg", keyring)
+        image = self._image(pockets)
+        foreign = image["foreignKeyring"]
+        self.assertIsInstance(foreign, dict)
+        foreign["packageSha256"] = build_image.sha256_bytes(deb)
+        foreign["sha256"] = build_image.sha256_bytes(keyring)
+        files[str(foreign["packageUrl"])] = deb
+        return image, files
+
+    def _fetch(self, files: dict[str, bytes]):
+        def fetch(url, destination, expected, label, headers=None):
+            payload = files.get(url)
+            if payload is None:
+                raise build_image.urllib.error.URLError(url)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
+            build_image.verify_digest(destination, expected, label)
+            return destination
+
+        return fetch
+
+    def test_debian_lock_stays_one_pocket(self) -> None:
+        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes())
+        image = lock["images"]["debian-trixie-snapshot"]
+        self.assertNotIn("pockets", image)
+        self.assertNotIn("foreignKeyring", image)
+        self.assertIsNone(build_image.parse_apt_pockets(image))
+        self.assertEqual(
+            image["snapshot"]["inReleaseSha256"],
+            "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
+        )
+
+    def test_refuses_empty_duplicate_mixed_timestamp_and_mismatched_distribution(self) -> None:
+        empty = self._image([])
+        with self.assertRaisesRegex(build_image.BuildError, "non-empty"):
+            build_image.parse_apt_pockets(empty)
+
+        duplicate = self._image([self._pocket("resolute"), self._pocket("resolute")])
+        with self.assertRaisesRegex(build_image.BuildError, "duplicate"):
+            build_image.parse_apt_pockets(duplicate)
+
+        mixed = self._image(
+            [
+                self._pocket("resolute"),
+                self._pocket("resolute-updates", "20261002T000000Z"),
+                self._pocket("resolute-security"),
+            ]
+        )
+        with self.assertRaisesRegex(build_image.BuildError, "mixed-timestamp"):
+            build_image.parse_apt_pockets(mixed)
+
+        foreign = self._image(
+            [
+                self._pocket("resolute"),
+                self._pocket("resolute-updates"),
+                {
+                    "suite": "resolute-security",
+                    "archiveUrl": "https://snapshot.debian.org/archive/debian/20261001T000000Z/",
+                    "inReleaseUrl": (
+                        "https://snapshot.debian.org/archive/debian/20261001T000000Z/"
+                        "dists/resolute-security/InRelease"
+                    ),
+                    "inReleaseSha256": "ab" * 32,
+                },
+            ]
+        )
+        with self.assertRaisesRegex(build_image.BuildError, "mismatched-distribution"):
+            build_image.parse_apt_pockets(foreign)
+
+        wrong_suite = self._image(
+            [
+                {
+                    **self._pocket("resolute"),
+                    "inReleaseUrl": (
+                        "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/dists/noble/InRelease"
+                    ),
+                }
+            ]
+        )
+        with self.assertRaisesRegex(build_image.BuildError, "mismatched-distribution"):
+            build_image.parse_apt_pockets(wrong_suite)
+
+    def test_three_pocket_fixture_verifies_metadata_before_bootstrap(self) -> None:
+        image, files = self._fixture()
+        with tempfile.TemporaryDirectory() as temporary:
+            root_dir = Path(temporary)
+            work = root_dir / "work"
+            work.mkdir()
+            cache = root_dir / "cache"
+            cache.mkdir()
+            empty = root_dir / "empty.tar"
+            with tarfile.open(empty, "w"):
+                pass
+            lines_path = root_dir / "lines"
+            flag_path = root_dir / "flag"
+            keyring_flag = root_dir / "keyring-package"
+            key_url = root_dir / "key-url"
+            runner = root_dir / "runner.sh"
+            runner.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s' \"$LISKOV_APT_POCKET_LINES\" > {lines_path}\n"
+                f"printf '%s' \"$LISKOV_APT_POCKETS\" > {flag_path}\n"
+                f"printf '%s' \"$LISKOV_APT_FOREIGN_KEYRING_URL\" > {key_url}\n"
+                "if [ -n \"${LISKOV_APT_KEYRING_PACKAGE:-}\" ]; then\n"
+                f"  printf '%s' \"$LISKOV_APT_KEYRING_PACKAGE\" > {keyring_flag}\n"
+                "fi\n"
+                f"cat {empty}\n",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                patch.dict(os.environ, {"LISKOV_APT_SNAPSHOT_RUNNER": str(runner)}),
+            ):
+                materials, _omitted, recipe = build_image.materialize_apt_snapshot(
+                    image, work / "rootfs", cache, work
+                )
+            pocket_lines = lines_path.read_text(encoding="utf-8")
+            self.assertEqual(flag_path.read_text(encoding="utf-8"), "1")
+            self.assertFalse(keyring_flag.exists())
+            self.assertTrue(key_url.read_text(encoding="utf-8").startswith("https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/"))
+        self.assertEqual(
+            [line.split("|", 1)[0] for line in pocket_lines.splitlines() if line],
+            ["resolute", "resolute-updates", "resolute-security"],
+        )
+        self.assertEqual(
+            [pocket["suite"] for pocket in recipe["pockets"]],
+            ["resolute", "resolute-updates", "resolute-security"],
+        )
+        self.assertTrue(
+            all(
+                pocket["archiveUrl"] == "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/"
+                for pocket in recipe["pockets"]
+            )
+        )
+        roles = [item["role"] for item in materials]
+        self.assertEqual(roles.count("archive-snapshot-release"), 3)
+        self.assertEqual(roles.count("archive-package-index"), 3)
+        self.assertEqual(roles.count("archive-keyring"), 1)
+        self.assertIn("archive-keyring-package", roles)
+        self.assertNotIn("pockets", json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes()))
+
+    def test_bad_digest_bad_signature_and_missing_index_fail_closed(self) -> None:
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        first = pockets[0]
+        self.assertIsInstance(first, dict)
+        first["inReleaseSha256"] = "ab" * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "SHA-256 mismatch"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, cache)
+
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        signed = bytearray(files[pockets[0]["inReleaseUrl"]])
+        signed[signed.index(b"Origin")] = ord("X")
+        files[pockets[0]["inReleaseUrl"]] = bytes(signed)
+        pockets[0]["inReleaseSha256"] = build_image.sha256_bytes(bytes(signed))
+        with tempfile.TemporaryDirectory() as runner_dir:
+            marker = Path(runner_dir) / "ran"
+            runner = Path(runner_dir) / "runner.sh"
+            runner.write_text(f"#!/bin/sh\ntouch {marker}\nexit 99\n", encoding="utf-8")
+            runner.chmod(0o755)
+            with tempfile.TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                with (
+                    patch.object(build_image, "download", side_effect=self._fetch(files)),
+                    patch.dict(os.environ, {"LISKOV_APT_SNAPSHOT_RUNNER": str(runner)}),
+                    self.assertRaisesRegex(build_image.BuildError, "signature verification failed"),
+                ):
+                    build_image.materialize_apt_snapshot(
+                        image, work / "rootfs", work / "cache", work
+                    )
+            self.assertFalse(marker.exists())
+
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        index = files[
+            pockets[0]["archiveUrl"] + "dists/resolute/main/binary-arm64/Packages.xz"
+        ]
+        body = self._release("resolute", index).replace(
+            " main/binary-arm64/Packages.xz\n",
+            " main/binary-amd64/Packages.xz\n",
+        )
+        signed = self._sign(body)
+        files[pockets[0]["inReleaseUrl"]] = signed
+        pockets[0]["inReleaseSha256"] = build_image.sha256_bytes(signed)
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "missing main/binary-arm64/Packages.xz"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+    def test_rejects_index_mismatch_missing_pocket_and_bad_keyring(self) -> None:
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        index_url = pockets[0]["archiveUrl"] + "dists/resolute/main/binary-arm64/Packages.xz"
+        index = files[index_url]
+        body = self._release("resolute", index).replace(
+            f" {len(index)} ",
+            f" {len(index) + 1} ",
+            1,
+        )
+        signed = self._sign(body)
+        files[pockets[0]["inReleaseUrl"]] = signed
+        pockets[0]["inReleaseSha256"] = build_image.sha256_bytes(signed)
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "size mismatch"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        digest = build_image.sha256_bytes(b"other-index")
+        body = (
+            "Origin: Ubuntu\n"
+            "Suite: resolute\n"
+            "Codename: resolute\n"
+            "Components: main\n"
+            "Architectures: arm64\n"
+            "SHA256:\n"
+            f" {digest} 1 main/binary-arm64/Packages.xz\n"
+        )
+        signed = self._sign(body)
+        files[pockets[0]["inReleaseUrl"]] = signed
+        pockets[0]["inReleaseSha256"] = build_image.sha256_bytes(signed)
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "SHA-256 mismatch"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        del files[pockets[2]["inReleaseUrl"]]
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "missing apt-snapshot pocket"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, files = self._fixture()
+        foreign = image["foreignKeyring"]
+        self.assertIsInstance(foreign, dict)
+        foreign["packageSha256"] = "cd" * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "SHA-256 mismatch"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, files = self._fixture()
+        foreign = image["foreignKeyring"]
+        self.assertIsInstance(foreign, dict)
+        foreign["sha256"] = "ef" * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "foreign archive keyring SHA-256 mismatch"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, _files = self._fixture()
+        foreign = image["foreignKeyring"]
+        self.assertIsInstance(foreign, dict)
+        foreign["packageUrl"] = "https://example.invalid/ubuntu-keyring.deb"
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(build_image.BuildError, "not under the pocket snapshot"):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+    def test_rejects_signed_suite_and_codename_mismatch(self) -> None:
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        index_url = pockets[1]["archiveUrl"] + "dists/resolute-updates/main/binary-arm64/Packages.xz"
+        body = self._release("noble", files[index_url])
+        signed = self._sign(body)
+        files[pockets[1]["inReleaseUrl"]] = signed
+        pockets[1]["inReleaseSha256"] = build_image.sha256_bytes(signed)
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "mismatched-distribution"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+        image, files = self._fixture()
+        pockets = image["pockets"]
+        self.assertIsInstance(pockets, list)
+        index_url = pockets[2]["archiveUrl"] + "dists/resolute-security/main/binary-arm64/Packages.xz"
+        body = self._release("resolute-security", files[index_url], codename="noble")
+        signed = self._sign(body)
+        files[pockets[2]["inReleaseUrl"]] = signed
+        pockets[2]["inReleaseSha256"] = build_image.sha256_bytes(signed)
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                self.assertRaisesRegex(build_image.BuildError, "mismatched-distribution"),
+            ):
+                build_image.stage_multi_pocket_inputs(image, Path(temporary))
+
+    def test_extracts_zstd_keyring_member(self) -> None:
+        payload = b"zstd-keyring"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            member = root / "usr/share/keyrings/ubuntu-archive-keyring.gpg"
+            member.parent.mkdir(parents=True)
+            member.write_bytes(payload)
+            archive = root / "data.tar.zst"
+            subprocess.run(
+                [
+                    "tar",
+                    "--zstd",
+                    "-cf",
+                    str(archive),
+                    "-C",
+                    str(root),
+                    "usr/share/keyrings/ubuntu-archive-keyring.gpg",
+                ],
+                check=True,
+            )
+            deb = root / "keyring.deb"
+            deb.write_bytes(
+                self._ar(
+                    [
+                        ("debian-binary", b"2.0\n"),
+                        ("data.tar.zst", archive.read_bytes()),
+                    ]
+                )
+            )
+            destination = root / "out.gpg"
+            build_image.extract_deb_data_file(
+                deb,
+                "usr/share/keyrings/ubuntu-archive-keyring.gpg",
+                destination,
+            )
+            self.assertEqual(destination.read_bytes(), payload)
+
+    def test_runner_keeps_the_debian_path_and_pins_the_foreign_keyring(self) -> None:
+        script = (REPOSITORY_ROOT / "scripts/mmdebstrap-docker.sh").read_text(encoding="utf-8")
+        multi, one_pocket = script.split(
+            "for variable in \\\n  LISKOV_APT_BUILDER_IMAGE \\\n",
+            1,
+        )
+        self.assertNotIn("LISKOV_APT_KEYRING_PACKAGE", multi)
+        self.assertIn(
+            '"${LISKOV_APT_MMDEBSTRAP_PACKAGE}=${LISKOV_APT_MMDEBSTRAP_VERSION}" \\\n'
+            "        curl \\\n"
+            "        ca-certificates >&2",
+            multi,
+        )
+        self.assertLess(multi.index("curl -fLSs"), multi.index("sha256sum -c"))
+        self.assertLess(multi.index("sha256sum -c"), multi.index("exec mmdebstrap"))
+        self.assertIn("signed-by=${signed_by}", multi)
+        self.assertIn(
+            '"${LISKOV_APT_KEYRING_PACKAGE}=${LISKOV_APT_KEYRING_VERSION}"',
+            one_pocket,
+        )
+        self.assertIn('"${LISKOV_APT_SUITE}" - "${LISKOV_APT_ARCHIVE_URL}"', one_pocket)
+        self.assertIn("--components=", one_pocket)
+        self.assertNotIn("--setup-hook=", one_pocket)
+
+    def test_multi_pocket_setup_hook_creates_keyring_dir_before_copy_in(self) -> None:
+        script = (REPOSITORY_ROOT / "scripts/mmdebstrap-docker.sh").read_text(encoding="utf-8")
+        multi, _one_pocket = script.split(
+            "for variable in \\\n  LISKOV_APT_BUILDER_IMAGE \\\n",
+            1,
+        )
+        hook_lines = [
+            line.strip()
+            for line in multi.splitlines()
+            if line.strip().startswith("--setup-hook=")
+        ]
+        self.assertEqual(
+            hook_lines,
+            [
+                '--setup-hook="mkdir -p \\"\\$1$(dirname "${signed_by}")\\"" \\',
+                '--setup-hook="copy-in ${signed_by} $(dirname "${signed_by}")" \\',
+            ],
+        )
+        bodies = [line.removesuffix("\\").strip() for line in hook_lines]
+        continued = [f"{body} \\" for body in bodies[:-1]]
+        probe = "\n".join(
+            [
+                "signed_by=/usr/share/keyrings/ubuntu-archive-keyring.gpg",
+                "set -- \\",
+                *continued,
+                bodies[-1],
+                'printf "%s\\n" "$#"',
+                'printf "%s\\n" "$@"',
+            ]
+        )
+        completed = subprocess.run(
+            ["sh", "-eu", "-c", probe],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            [
+                "2",
+                '--setup-hook=mkdir -p "$1/usr/share/keyrings"',
+                "--setup-hook=copy-in /usr/share/keyrings/ubuntu-archive-keyring.gpg /usr/share/keyrings",
+            ],
+        )
 
 
 if __name__ == "__main__":
