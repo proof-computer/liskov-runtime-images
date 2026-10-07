@@ -593,6 +593,47 @@ class SnapshotTlsTrustTests(unittest.TestCase):
                 "pkg:deb/debian/ca-certificates@20250419?arch=all",
             )
 
+    def test_spdx_declares_fsl_for_the_shim_and_noassertion_for_os_packages(
+        self,
+    ) -> None:
+        image = self.snapshot_image()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            status = root / "var/lib/dpkg/status"
+            status.parent.mkdir(parents=True)
+            status.write_text(
+                "Package: ca-certificates\n"
+                "Status: install ok installed\n"
+                "Version: 20250419\n"
+                "Architecture: all\n",
+                encoding="utf-8",
+            )
+            document = build_image.spdx_document(
+                "debian-trixie-snapshot",
+                image,
+                "a" * 64,
+                root,
+                "b" * 64,
+                "2026-09-20T00:00:00Z",
+            )
+        self.assertEqual(document["dataLicense"], "CC0-1.0")
+        by_id = {package["SPDXID"]: package for package in document["packages"]}
+        shim = by_id["SPDXRef-Package-Liskov-Getifaddrs-Override"]
+        self.assertEqual(shim["licenseConcluded"], "FSL-1.1-Apache-2.0")
+        self.assertEqual(shim["licenseDeclared"], "FSL-1.1-Apache-2.0")
+        rootfs = by_id["SPDXRef-Package-Rootfs"]
+        self.assertEqual(rootfs["licenseConcluded"], "NOASSERTION")
+        self.assertEqual(rootfs["licenseDeclared"], "NOASSERTION")
+        distro = [
+            package
+            for package in document["packages"]
+            if str(package["SPDXID"]).startswith("SPDXRef-Package-Distro-")
+        ]
+        self.assertGreater(len(distro), 0)
+        for package in distro:
+            self.assertEqual(package["licenseConcluded"], "NOASSERTION")
+            self.assertEqual(package["licenseDeclared"], "NOASSERTION")
+
     def trusted_root(self, root: Path) -> dict[str, object]:
         status = root / "var/lib/dpkg/status"
         status.parent.mkdir(parents=True)

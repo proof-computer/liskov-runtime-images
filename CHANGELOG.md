@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- License repository-authored code, scripts, the shipped `getifaddrs` shim
+  source, and documentation under `FSL-1.1-Apache-2.0`. The image SBOM
+  declares that identifier for the repository-authored shim package. Earlier
+  image revisions keep Apache-2.0. Operating-system packages keep their
+  upstream licences.
 - Promote the exact `v0.1.0-rc.13` `debian-trixie-snapshot` archive
   (`ac69afc5…2f9a`) to maintained default without rebuilding, after the
   bounded A/B canary on 2026-10-02 (jobs 191339 control and 191395

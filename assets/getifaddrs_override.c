@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: FSL-1.1-Apache-2.0
 // Copyright 2026 PROOF Computer
 
 #include <errno.h>

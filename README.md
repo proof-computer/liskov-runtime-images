@@ -71,7 +71,7 @@ overlay; snapshot-specific filesystem fixups are declared separately in
 The [Ubuntu Resolute snapshot source contract](docs/ubuntu-resolute-snapshot-source.md)
 records the verified arm64 archive pockets and keyring for the next build lane.
 
-The Apache-2.0 shim is compiled deterministically from the included source and
+The shim is compiled deterministically from the included source and
 implements the loopback-only workaround documented for Cargo/PRoot by
 [Acurast](https://docs.acurast.com/developers/build/cargo-runtime-environment/#network-interfaces-getifaddrs).
 Liskov's bootstrap exports it through `LD_PRELOAD` only when the verified
@@ -83,6 +83,26 @@ separately from the filesystem overlay.
 
 Operating-system packages retain their original licenses. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and each release's SPDX SBOM.
+
+## License
+
+Repository-authored code, scripts, the shipped `getifaddrs` shim source, and
+documentation are licensed under the Functional Source License, Version 1.1,
+with Apache-2.0 as the future licence (SPDX `FSL-1.1-Apache-2.0`). The text is
+[`LICENSE`](LICENSE).
+
+You may use, copy, modify, create derivative works, publicly perform, publicly
+display, and redistribute that material for any Permitted Purpose. A Permitted
+Purpose is any purpose other than a Competing Use: making the software
+available to others in a commercial product or service that substitutes for the
+software, substitutes for another product or service we offer using it, or
+offers the same or substantially similar functionality. Each version may also
+be used under Apache-2.0 on the second anniversary of the date it was made
+available.
+
+Earlier image revisions keep the Apache-2.0 licence they shipped with.
+Operating-system packages inside a generated rootfs keep their upstream
+licences.
 
 ## Verify a release
 
