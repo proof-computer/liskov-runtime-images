@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -485,10 +486,538 @@ def materialize_oci(
     return materials, omitted
 
 
+_SNAPSHOT_TIMESTAMP_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z")
+_SUITE_RE = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _sha256_pin(value: object, field: str) -> str:
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        raise BuildError(f"{field} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _http_url(value: object, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.startswith(("http://", "https://"))
+        or any(character in value for character in " \t\r\n|")
+    ):
+        raise BuildError(f"{field} must be an http(s) URL without spaces or '|': {value!r}")
+    return value
+
+
+def _snapshot_identity(url: str, field: str) -> tuple[str, str]:
+    timestamps = _SNAPSHOT_TIMESTAMP_RE.findall(url)
+    if len(timestamps) != 1:
+        raise BuildError(f"{field} must contain one snapshot timestamp: {url}")
+    timestamp = timestamps[0]
+    marker = f"/{timestamp}"
+    if marker not in url:
+        raise BuildError(f"{field} must contain snapshot timestamp {timestamp} as a path segment")
+    prefix, _rest = url.split(marker, 1)
+    identity = f"{prefix}/{timestamp}/"
+    normalized = url if url.endswith("/") else f"{url}/"
+    if normalized != identity:
+        raise BuildError(f"{field} must be exactly the snapshot root {identity}")
+    return timestamp, identity
+
+
+def _component_names(value: object, field: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise BuildError(f"{field} must be a non-empty list")
+    names: list[str] = []
+    for index, item in enumerate(value):
+        if (
+            not isinstance(item, str)
+            or _SUITE_RE.fullmatch(item) is None
+        ):
+            raise BuildError(f"{field}[{index}] must be a single apt component name")
+        names.append(item)
+    return names
+
+
+def parse_apt_pockets(image: dict[str, Any]) -> list[dict[str, str]] | None:
+    """Return the multi-pocket input, or None for the one-pocket Debian lock.
+
+    A present but empty, duplicate, mixed-timestamp, or cross-archive set is
+    refused. The one-pocket lock has no `pockets` key and is left untouched.
+    """
+
+    if "pockets" not in image:
+        return None
+    raw = image["pockets"]
+    if not isinstance(raw, list) or not raw:
+        raise BuildError("apt-snapshot pockets must be a non-empty list")
+    primary = image.get("suite")
+    if not isinstance(primary, str) or _SUITE_RE.fullmatch(primary) is None:
+        raise BuildError("apt-snapshot suite must name one pocket")
+    parsed: list[dict[str, str]] = []
+    seen_suites: set[str] = set()
+    seen_urls: set[str] = set()
+    timestamp: str | None = None
+    identity: str | None = None
+    for index, pocket in enumerate(raw):
+        field = f"pockets[{index}]"
+        if not isinstance(pocket, dict):
+            raise BuildError(f"{field} must be an object")
+        suite = pocket.get("suite")
+        if not isinstance(suite, str) or _SUITE_RE.fullmatch(suite) is None:
+            raise BuildError(f"{field}.suite is empty or invalid")
+        archive_url = _http_url(pocket.get("archiveUrl"), f"{field}.archiveUrl")
+        in_release_url = _http_url(pocket.get("inReleaseUrl"), f"{field}.inReleaseUrl")
+        digest = _sha256_pin(pocket.get("inReleaseSha256"), f"{field}.inReleaseSha256")
+        if suite in seen_suites:
+            raise BuildError(f"duplicate apt-snapshot pocket suite: {suite}")
+        if in_release_url in seen_urls:
+            raise BuildError(f"duplicate apt-snapshot pocket InRelease URL: {in_release_url}")
+        pocket_timestamp, pocket_identity = _snapshot_identity(archive_url, f"{field}.archiveUrl")
+        if timestamp is None:
+            timestamp = pocket_timestamp
+            identity = pocket_identity
+        elif pocket_timestamp != timestamp:
+            raise BuildError(
+                f"mixed-timestamp apt-snapshot pockets: {timestamp} and {pocket_timestamp}"
+            )
+        elif pocket_identity != identity:
+            raise BuildError(
+                "mismatched-distribution apt-snapshot pockets: "
+                f"{identity} and {pocket_identity}"
+            )
+        expected_url = f"{pocket_identity}dists/{suite}/InRelease"
+        if in_release_url != expected_url:
+            raise BuildError(
+                f"mismatched-distribution pocket {suite}: InRelease URL {in_release_url} "
+                f"is not {expected_url}"
+            )
+        seen_suites.add(suite)
+        seen_urls.add(in_release_url)
+        parsed.append(
+            {
+                "suite": suite,
+                "archiveUrl": pocket_identity,
+                "inReleaseUrl": in_release_url,
+                "inReleaseSha256": digest,
+            }
+        )
+    if primary not in seen_suites:
+        raise BuildError(f"apt-snapshot suite {primary} is not one of the pockets")
+    return parsed
+
+
+def foreign_keyring_spec(image: dict[str, Any]) -> dict[str, str]:
+    raw = image.get("foreignKeyring")
+    if not isinstance(raw, dict):
+        raise BuildError("multi-pocket apt-snapshot requires foreignKeyring")
+    member = raw.get("member")
+    if not isinstance(member, str):
+        raise BuildError("foreignKeyring.member must be a relative path inside the package")
+    relative = PurePosixPath(member)
+    if relative.is_absolute() or not member or ".." in relative.parts:
+        raise BuildError(f"foreign keyring member path is unsafe: {member}")
+    return {
+        "packageUrl": _http_url(raw.get("packageUrl"), "foreignKeyring.packageUrl"),
+        "packageSha256": _sha256_pin(raw.get("packageSha256"), "foreignKeyring.packageSha256"),
+        "member": relative.as_posix(),
+        "sha256": _sha256_pin(raw.get("sha256"), "foreignKeyring.sha256"),
+    }
+
+
+def _ar_members(blob: bytes) -> list[tuple[str, bytes]]:
+    if not blob.startswith(b"!<arch>\n"):
+        raise BuildError("foreign keyring package is not a Debian ar archive")
+    offset = 8
+    members: list[tuple[str, bytes]] = []
+    while offset + 60 <= len(blob):
+        header = blob[offset : offset + 60]
+        if header[58:60] != b"`\n":
+            raise BuildError("foreign keyring package ar header is invalid")
+        name = header[0:16].decode("ascii", "replace").strip().rstrip("/")
+        try:
+            size = int(header[48:58].decode("ascii").strip())
+        except ValueError as error:
+            raise BuildError("foreign keyring package ar member size is invalid") from error
+        start = offset + 60
+        end = start + size
+        if size < 0 or end > len(blob):
+            raise BuildError("foreign keyring package ar member is truncated")
+        members.append((name, blob[start:end]))
+        offset = end + (size % 2)
+    return members
+
+
+def extract_deb_data_file(deb_path: Path, member: str, destination: Path) -> None:
+    """Extract one regular file from a verified .deb without unpacking the rest."""
+
+    relative = PurePosixPath(member)
+    if relative.is_absolute() or not member or ".." in relative.parts:
+        raise BuildError(f"foreign keyring member path is unsafe: {member}")
+    normalized = relative.as_posix()
+    data_name = ""
+    data_bytes = b""
+    for name, payload in _ar_members(deb_path.read_bytes()):
+        if name.startswith("data.tar."):
+            data_name = name
+            data_bytes = payload
+            break
+    if not data_name:
+        raise BuildError(f"foreign keyring package has no data.tar member: {deb_path}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="liskov-keyring-") as temporary:
+        archive = Path(temporary) / data_name
+        archive.write_bytes(data_bytes)
+        if data_name.endswith((".gz", ".xz")):
+            mode = "r:gz" if data_name.endswith(".gz") else "r:xz"
+            with tarfile.open(archive, mode) as tar:
+                match = None
+                for info in tar.getmembers():
+                    if info.name.removeprefix("./").rstrip("/") == normalized and info.isreg():
+                        match = info
+                        break
+                if match is None:
+                    raise BuildError(f"foreign keyring package is missing {normalized}")
+                extracted = tar.extractfile(match)
+                if extracted is None:
+                    raise BuildError(f"foreign keyring package is missing {normalized}")
+                destination.write_bytes(extracted.read())
+        elif data_name.endswith(".zst"):
+            listed = subprocess.run(
+                ["tar", "--zstd", "-tf", str(archive)],
+                check=False,
+                capture_output=True,
+            )
+            if listed.returncode != 0:
+                detail = listed.stderr.decode("utf-8", "replace").strip()
+                raise BuildError(f"could not list foreign keyring package: {detail}")
+            chosen = next(
+                (
+                    name
+                    for name in listed.stdout.decode("utf-8", "replace").splitlines()
+                    if name.removeprefix("./").rstrip("/") == normalized
+                ),
+                None,
+            )
+            if chosen is None:
+                raise BuildError(f"foreign keyring package is missing {normalized}")
+            extracted = subprocess.run(
+                ["tar", "--zstd", "-xOf", str(archive), chosen],
+                check=False,
+                capture_output=True,
+            )
+            if extracted.returncode != 0:
+                detail = extracted.stderr.decode("utf-8", "replace").strip()
+                raise BuildError(f"foreign keyring package is missing {normalized}: {detail}")
+            destination.write_bytes(extracted.stdout)
+        else:
+            raise BuildError(f"unsupported keyring data member {data_name}")
+    os.chmod(destination, 0o644)
+
+
+def clearsigned_body(text: str) -> str:
+    """Return the payload of a clearsigned message after gpgv has accepted it."""
+
+    lines = text.splitlines()
+    try:
+        start = lines.index("-----BEGIN PGP SIGNED MESSAGE-----")
+        end = lines.index("-----BEGIN PGP SIGNATURE-----")
+    except ValueError as error:
+        raise BuildError("InRelease is not a clearsigned message") from error
+    body = lines[start + 1 : end]
+    if body and body[0].startswith("Hash:"):
+        body = body[1:]
+    if body and body[0] == "":
+        body = body[1:]
+    decoded: list[str] = []
+    for line in body:
+        if line.startswith("- "):
+            line = line[2:]
+        decoded.append(line)
+    return "\n".join(decoded) + ("\n" if decoded else "")
+
+
+def gpg_verify_inrelease(path: Path, keyring: Path, label: str) -> str:
+    """Return the signature-checked Release body. gpgv failure is fail-closed."""
+
+    completed = subprocess.run(
+        ["gpgv", "--keyring", str(keyring), str(path)],
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise BuildError(f"{label} signature verification failed: {detail}")
+    return clearsigned_body(path.read_text(encoding="utf-8"))
+
+
+def parse_release_metadata(text: str) -> tuple[dict[str, str], dict[str, tuple[str, int]]]:
+    headers: dict[str, str] = {}
+    hashes: dict[str, tuple[str, int]] = {}
+    section: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip("\r")
+        if section == "SHA256":
+            if not line:
+                section = None
+                continue
+            if line.startswith(" "):
+                parts = line.split()
+                if len(parts) != 3 or _SHA256_RE.fullmatch(parts[0]) is None or not parts[1].isdigit():
+                    raise BuildError(f"malformed signed SHA256 entry: {line!r}")
+                hashes[parts[2]] = (parts[0], int(parts[1]))
+                continue
+            section = None
+        if line.endswith(":") and " " not in line:
+            section = line[:-1]
+            continue
+        if section is None and ":" in line:
+            key, value = line.split(":", 1)
+            headers[key] = value.strip()
+    return headers, hashes
+
+
+def _fetch_pinned(url: str, destination: Path, expected: str, label: str, missing: str) -> Path:
+    try:
+        return download(url, destination, expected, label)
+    except BuildError as error:
+        if "SHA-256 mismatch" in str(error):
+            raise
+        if "download returned HTTP" in str(error):
+            raise BuildError(f"{missing}: {error}") from error
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise BuildError(f"{missing}: {error}") from error
+
+
+def stage_multi_pocket_inputs(
+    image: dict[str, Any], cache_dir: Path
+) -> tuple[list[dict[str, str]], dict[str, str], list[dict[str, Any]]]:
+    """Verify every pocket and the foreign keyring. Does not start bootstrap."""
+
+    pockets = parse_apt_pockets(image)
+    if not pockets:
+        raise BuildError("apt-snapshot pockets must be a non-empty list")
+    spec = foreign_keyring_spec(image)
+    _timestamp, identity = _snapshot_identity(pockets[0]["archiveUrl"], "pockets[0].archiveUrl")
+    if not spec["packageUrl"].startswith(identity):
+        raise BuildError(
+            "foreign keyring package URL is not under the pocket snapshot "
+            f"{identity}: {spec['packageUrl']}"
+        )
+    components = _component_names(image.get("components"), "components")
+    architecture = image.get("architecture")
+    if not isinstance(architecture, str) or _SUITE_RE.fullmatch(architecture) is None:
+        raise BuildError("apt-snapshot architecture must name the package index")
+    deb_path = _fetch_pinned(
+        spec["packageUrl"],
+        cache_path(cache_dir, spec["packageSha256"], ".deb"),
+        spec["packageSha256"],
+        "foreign archive keyring package",
+        f"missing foreign keyring package {spec['packageUrl']}",
+    )
+    # The locked extracted-file digest is the trust anchor. A keyring downloaded
+    # from the archive it verifies is not evidence on its own.
+    keyring_path = cache_path(cache_dir, spec["sha256"], ".gpg")
+    if keyring_path.is_file():
+        verify_digest(keyring_path, spec["sha256"], "foreign archive keyring")
+    else:
+        extract_deb_data_file(deb_path, spec["member"], keyring_path)
+        verify_digest(keyring_path, spec["sha256"], "foreign archive keyring")
+
+    materials: list[dict[str, Any]] = []
+    codenames: list[str | None] = []
+    origins: list[str | None] = []
+    for pocket in pockets:
+        label = f"pocket {pocket['suite']} InRelease {pocket['inReleaseUrl']}"
+        inrelease_path = _fetch_pinned(
+            pocket["inReleaseUrl"],
+            cache_path(cache_dir, pocket["inReleaseSha256"], ".InRelease"),
+            pocket["inReleaseSha256"],
+            label,
+            f"missing apt-snapshot pocket {pocket['inReleaseUrl']}",
+        )
+        body = gpg_verify_inrelease(inrelease_path, keyring_path, label)
+        headers, hashes = parse_release_metadata(body)
+        signed_suite = headers.get("Suite")
+        if signed_suite != pocket["suite"]:
+            raise BuildError(
+                f"mismatched-distribution pocket {pocket['inReleaseUrl']}: "
+                f"signed Suite is {signed_suite!r}, declared {pocket['suite']!r}"
+            )
+        codenames.append(headers.get("Codename"))
+        origins.append(headers.get("Origin"))
+        materials.append(
+            {
+                "uri": pocket["inReleaseUrl"],
+                "digest": {"sha256": pocket["inReleaseSha256"]},
+                "mediaType": "text/plain",
+                "role": "archive-snapshot-release",
+            }
+        )
+        for component in components:
+            index_name = f"{component}/binary-{architecture}/Packages.xz"
+            if index_name not in hashes:
+                raise BuildError(
+                    f"signed metadata is missing {index_name} ({pocket['inReleaseUrl']})"
+                )
+            digest, size = hashes[index_name]
+            index_url = f"{pocket['archiveUrl']}dists/{pocket['suite']}/{index_name}"
+            index_label = f"pocket {pocket['suite']} {index_name} {index_url}"
+            index_path = _fetch_pinned(
+                index_url,
+                cache_path(cache_dir, digest, ".Packages.xz"),
+                digest,
+                index_label,
+                f"missing apt-snapshot pocket index {index_url}",
+            )
+            verify_size(index_path, size, index_label)
+            materials.append(
+                {
+                    "uri": index_url,
+                    "digest": {"sha256": digest},
+                    "size": size,
+                    "mediaType": "application/x-xz",
+                    "role": "archive-package-index",
+                }
+            )
+    if len(set(codenames)) != 1:
+        joined = ", ".join(sorted(str(item) for item in set(codenames)))
+        raise BuildError(f"mismatched-distribution pockets: signed Codename values differ: {joined}")
+    if len(set(origins)) != 1:
+        joined = ", ".join(sorted(str(item) for item in set(origins)))
+        raise BuildError(f"mismatched-distribution pockets: signed Origin values differ: {joined}")
+    return pockets, spec, materials
+
+
+def materialize_multi_pocket_snapshot(
+    image: dict[str, Any], root: Path, cache_dir: Path, work: Path
+) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+    """Verify a same-timestamp pocket set, then bootstrap with those sources only."""
+
+    pockets, spec, materials = stage_multi_pocket_inputs(image, cache_dir)
+    builder = image["builder"]
+    runner = os.environ.get(
+        "LISKOV_APT_SNAPSHOT_RUNNER",
+        str(REPOSITORY_ROOT / "scripts/mmdebstrap-docker.sh"),
+    )
+    environment = {
+        **os.environ,
+        "LISKOV_APT_BUILDER_IMAGE": (
+            f"{builder['repository'].removeprefix('library/')}@{builder['imageDigest']}"
+        ),
+        "LISKOV_APT_MMDEBSTRAP_PACKAGE": builder["mmdebstrapPackage"],
+        "LISKOV_APT_MMDEBSTRAP_VERSION": builder["mmdebstrapVersion"],
+        "LISKOV_APT_POCKETS": "1",
+        "LISKOV_APT_POCKET_LINES": "".join(
+            f"{pocket['suite']}|{pocket['archiveUrl']}\n" for pocket in pockets
+        ),
+        "LISKOV_APT_FOREIGN_KEYRING_URL": spec["packageUrl"],
+        "LISKOV_APT_FOREIGN_KEYRING_PACKAGE_SHA256": spec["packageSha256"],
+        "LISKOV_APT_FOREIGN_KEYRING_MEMBER": spec["member"],
+        "LISKOV_APT_FOREIGN_KEYRING_SHA256": spec["sha256"],
+        "LISKOV_APT_ARCHIVE_URL": pockets[0]["archiveUrl"],
+        "LISKOV_APT_SUITE": image["suite"],
+        "LISKOV_APT_COMPONENTS": ",".join(image["components"]),
+        "LISKOV_APT_VARIANT": image["variant"],
+        "LISKOV_APT_INCLUDE": ",".join(image["include"]),
+        "LISKOV_APT_ARCHITECTURE": image["architecture"],
+        "SOURCE_DATE_EPOCH": str(image_epoch(image)),
+    }
+    for stale in (
+        "LISKOV_APT_KEYRING_PACKAGE",
+        "LISKOV_APT_KEYRING_VERSION",
+        "LISKOV_APT_KEYRING_PATH",
+        "LISKOV_APT_KEYRING_SHA256",
+    ):
+        environment.pop(stale, None)
+    bootstrap_tar = work / "bootstrap.tar"
+    with bootstrap_tar.open("wb") as output:
+        completed = subprocess.run(
+            [runner], env=environment, stdout=output, check=False
+        )
+    if completed.returncode != 0:
+        raise BuildError(f"apt snapshot bootstrap failed with exit {completed.returncode}")
+    if bootstrap_tar.stat().st_size == 0:
+        raise BuildError("apt snapshot bootstrap produced an empty archive")
+
+    root.mkdir()
+    omitted = extract_archive(bootstrap_tar, root, ignore_xattrs=True)
+    applied: dict[str, str] = {}
+    for relative, content in sorted(image.get("fixups", {}).items()):
+        destination = safe_destination(root, relative)
+        if destination.is_symlink():
+            destination.unlink()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+        os.chmod(destination, 0o644)
+        applied[relative] = sha256_bytes(content.encode())
+    removed: list[str] = []
+    for relative in sorted(image.get("removals", [])):
+        destination = safe_destination(root, relative)
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+            removed.append(relative)
+        elif destination.exists():
+            raise BuildError(f"declared removal is not a regular file: {relative}")
+
+    materials.extend(
+        [
+            {
+                "uri": f"oci://{builder['repository']}@{builder['imageDigest']}",
+                "digest": {"sha256": digest_hex(builder["imageDigest"], "builder.imageDigest")},
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "role": "builder-image",
+            },
+            {
+                "uri": (
+                    f"pkg:deb/{image['distribution']}/"
+                    f"{builder['mmdebstrapPackage']}@{builder['mmdebstrapVersion']}"
+                ),
+                "role": "builder-tool",
+            },
+            {
+                "uri": spec["packageUrl"],
+                "digest": {"sha256": spec["packageSha256"]},
+                "role": "archive-keyring-package",
+            },
+            {
+                "uri": spec["member"],
+                "digest": {"sha256": spec["sha256"]},
+                "role": "archive-keyring",
+            },
+        ]
+    )
+    recipe = {
+        "archiveUrl": pockets[0]["archiveUrl"],
+        "suite": image["suite"],
+        "components": list(image["components"]),
+        "variant": image["variant"],
+        "include": list(image["include"]),
+        "pockets": [
+            {
+                "suite": pocket["suite"],
+                "archiveUrl": pocket["archiveUrl"],
+                "inReleaseSha256": pocket["inReleaseSha256"],
+            }
+            for pocket in pockets
+        ],
+        "foreignKeyring": {
+            "packageUrl": spec["packageUrl"],
+            "packageSha256": spec["packageSha256"],
+            "sha256": spec["sha256"],
+        },
+        "fixups": applied,
+        "removed": removed,
+    }
+    return materials, omitted, recipe
+
+
 def materialize_apt_snapshot(
     image: dict[str, Any], root: Path, cache_dir: Path, work: Path
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     """Build a rootfs from an immutable archive snapshot and apply the declared fixups."""
+
+    if "pockets" in image:
+        return materialize_multi_pocket_snapshot(image, root, cache_dir, work)
 
     snapshot = image["snapshot"]
     keyring = image["keyring"]
