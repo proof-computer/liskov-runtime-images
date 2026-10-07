@@ -41,7 +41,12 @@ class SourceLockTests(unittest.TestCase):
         self.assertEqual(lock["schemaVersion"], 1)
         self.assertEqual(
             set(lock["images"]),
-            {"v4-control", "debian-trixie", "debian-trixie-snapshot"},
+            {
+                "v4-control",
+                "debian-trixie",
+                "debian-trixie-snapshot",
+                "ubuntu-resolute-snapshot",
+            },
         )
         snapshot = lock["images"]["debian-trixie-snapshot"]
         self.assertEqual(snapshot["kind"], "apt-snapshot")
@@ -72,6 +77,81 @@ class SourceLockTests(unittest.TestCase):
         build_image.digest_hex(
             lock["images"]["debian-trixie"]["manifestDigest"],
             "manifestDigest",
+        )
+
+    def test_ubuntu_resolute_snapshot_uses_the_verified_pockets(self) -> None:
+        lock = json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes())
+        image = lock["images"]["ubuntu-resolute-snapshot"]
+        self.assertEqual(image["kind"], "apt-snapshot")
+        self.assertEqual(image["distribution"], "ubuntu")
+        self.assertEqual(image["release"], "resolute")
+        self.assertEqual(image["architecture"], "arm64")
+        self.assertEqual(image["suite"], "resolute")
+        self.assertEqual(image["components"], ["main"])
+        self.assertEqual(image["include"], ["ca-certificates", "curl"])
+        self.assertEqual(image["supportStatus"], "release-candidate")
+        self.assertEqual(
+            image["outputStem"],
+            "liskov-runtime-image-ubuntu-resolute-snapshot-aarch64",
+        )
+        self.assertEqual(
+            image["archiveRoot"],
+            "liskov-ubuntu-resolute-snapshot-aarch64",
+        )
+        self.assertNotIn("snapshot", image)
+        self.assertNotIn("keyring", image)
+        pockets = build_image.parse_apt_pockets(image)
+        self.assertIsNotNone(pockets)
+        assert pockets is not None
+        self.assertEqual(
+            [pocket["suite"] for pocket in pockets],
+            ["resolute", "resolute-updates", "resolute-security"],
+        )
+        self.assertEqual(
+            [pocket["inReleaseSha256"] for pocket in pockets],
+            [
+                "45f95ce276cdba3e41870516a130e03c58b8b7a79e9546b0efe9e526d255740c",
+                "802e675dd9de4c7f3916434a95e7c1d8eec0e82886622d7805ab19a2c6fe0365",
+                "1d5041572116a8b23aabf79ac7439ad8af83d57ad3fb0f9aa0d4523ec10c5908",
+            ],
+        )
+        self.assertTrue(
+            all(
+                pocket["archiveUrl"]
+                == "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/"
+                for pocket in pockets
+            )
+        )
+        foreign = image["foreignKeyring"]
+        self.assertEqual(foreign["package"], "ubuntu-keyring")
+        self.assertEqual(foreign["version"], "2023.11.28.1build1")
+        self.assertEqual(
+            foreign["packageSha256"],
+            "c377ccf26964f4c206c05c0bc7adb708e031beb919bb9a0ff63af983d064cd66",
+        )
+        self.assertEqual(
+            foreign["member"],
+            "usr/share/keyrings/ubuntu-archive-keyring.gpg",
+        )
+        self.assertEqual(
+            foreign["sha256"],
+            "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31",
+        )
+        self.assertEqual(
+            set(image["fixups"]),
+            {"etc/hostname", "etc/hosts", "etc/resolv.conf"},
+        )
+        self.assertEqual(
+            image["fixups"]["etc/hostname"],
+            lock["images"]["debian-trixie-snapshot"]["fixups"]["etc/hostname"],
+        )
+        self.assertEqual(
+            image["removals"],
+            lock["images"]["debian-trixie-snapshot"]["removals"],
+        )
+        self.assertEqual(
+            image["builder"]["imageDigest"],
+            lock["images"]["debian-trixie-snapshot"]["builder"]["imageDigest"],
         )
 
     def test_overlay_includes_owned_getifaddrs_source_and_library(self) -> None:
@@ -1110,6 +1190,8 @@ class AptSnapshotPocketTests(unittest.TestCase):
                 for pocket in recipe["pockets"]
             )
         )
+        self.assertEqual(recipe["snapshotTimestamp"], "20261001T000000Z")
+        self.assertEqual(recipe["packages"], [])
         roles = [item["role"] for item in materials]
         self.assertEqual(roles.count("archive-snapshot-release"), 3)
         self.assertEqual(roles.count("archive-package-index"), 3)

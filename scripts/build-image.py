@@ -986,8 +986,12 @@ def materialize_multi_pocket_snapshot(
             },
         ]
     )
+    timestamp, _identity = _snapshot_identity(
+        pockets[0]["archiveUrl"], "pockets[0].archiveUrl"
+    )
     recipe = {
         "archiveUrl": pockets[0]["archiveUrl"],
+        "snapshotTimestamp": timestamp,
         "suite": image["suite"],
         "components": list(image["components"]),
         "variant": image["variant"],
@@ -1005,6 +1009,14 @@ def materialize_multi_pocket_snapshot(
             "packageSha256": spec["packageSha256"],
             "sha256": spec["sha256"],
         },
+        "packages": [
+            {
+                "name": package["name"],
+                "version": package["version"],
+                "architecture": package["architecture"],
+            }
+            for package in parse_dpkg_status(root)
+        ],
         "fixups": applied,
         "removed": removed,
     }

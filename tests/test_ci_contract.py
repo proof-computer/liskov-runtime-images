@@ -165,6 +165,7 @@ class BuildManifestTests(unittest.TestCase):
                 "debian-trixie": {"outputStem": "debian"},
                 "debian-trixie-snapshot": {"outputStem": "debian-snapshot"},
                 "v4-control": {"outputStem": "v4"},
+                "ubuntu-resolute-snapshot": {"outputStem": "ubuntu-resolute-snapshot"},
             }
         }
         (self.root / "sources.lock.json").write_text(
@@ -279,6 +280,15 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("scripts/build-qualified-target.sh", ci)
         self.assertIn("retention-days: 90", ci)
         self.assertGreaterEqual(ci.count("github.event_name == 'push'"), 3)
+        self.assertEqual(classifier.TARGETS, build_manifest.TARGETS)
+        self.assertIn("ubuntu-resolute-snapshot", classifier.TARGETS)
+        gate = (REPOSITORY_ROOT / "scripts" / "validate-change.sh").read_text(
+            encoding="utf-8"
+        )
+        for target in classifier.TARGETS:
+            self.assertIn(target, gate)
+        self.assertIn("matrix.target == 'ubuntu-resolute-snapshot'", ci)
+        self.assertIn("matrix.target == 'debian-trixie-snapshot'", ci)
 
     def test_release_only_promotes_and_never_constructs_or_smokes(self) -> None:
         release = (
@@ -286,6 +296,8 @@ class WorkflowContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("build-image.py", release)
         self.assertNotIn("smoke-rootfs.sh", release)
+        self.assertIn("ubuntu-resolute-snapshot", release)
+        self.assertIn("not the catalogue name", release)
         self.assertNotRegex(release, r"(?m)^  (build|proot):$")
         self.assertIn("gh attestation verify", release)
         self.assertIn("scripts/build-manifest.py", release)

@@ -15,6 +15,7 @@ snapshots one verified helper beside the generated `acurast.sh` launch bundle.
 | Target | Upstream trust root | Status |
 | --- | --- | --- |
 | `debian-trixie-snapshot` | Debian `trixie` bootstrapped by a pinned `mmdebstrap` from an immutable `snapshot.debian.org` timestamp, inside a digest-pinned builder container | **Maintained default**; exact `v0.1.0-rc.13` bytes promoted after the bounded Acurast A/B canary (ADR-0171). A security rebuild is a snapshot-timestamp bump |
+| `ubuntu-resolute-snapshot` | Ubuntu 26.04 (`resolute`) arm64 bootstrapped from the pinned `20261001T000000Z` base, updates, and security pockets, with a digest-pinned Ubuntu archive keyring | Release candidate only. Not the maintained default, and not the catalogue name `ubuntu-resolute` |
 | `debian-trixie` | Exact official Debian `trixie-slim` AArch64 OCI platform-manifest, config, and layer digests | A/B control; previously the maintained default (`v0.1.0-rc.12`, byte-identical in `v0.1.0-rc.13`) |
 | `v4-control` | Exact Termux PRoot-Distro v4.30.1 Ubuntu Questing AArch64 release asset | Compatibility control only |
 
@@ -54,6 +55,15 @@ The recipe, the bootstrap archive digest and every applied fixup are recorded
 under `aptSnapshot` in the provenance record. Set
 `LISKOV_APT_SNAPSHOT_RUNNER` to substitute the container runner.
 
+`ubuntu-resolute-snapshot` uses that same builder through the multi-pocket
+path. Before bootstrap it checks the three `20261001T000000Z` pockets
+(`resolute`, `resolute-updates`, `resolute-security`) and the digest-pinned
+`ubuntu-keyring` package, then applies the declared hostname, hosts, and
+resolver fixups and the apt-cache removals. Provenance records the snapshot
+timestamp, the three signed releases, the resolved package versions, and those
+fixups. The candidate is not promoted and does not register the catalogue
+name `ubuntu-resolute`.
+
 ## Declared Liskov overlay
 
 The base filesystem receives exactly these Liskov-owned paths:
@@ -69,7 +79,8 @@ per-distro keep/drop decisions. These three paths remain the whole common
 overlay; snapshot-specific filesystem fixups are declared separately in
 [`sources.lock.json`](sources.lock.json).
 The [Ubuntu Resolute snapshot source contract](docs/ubuntu-resolute-snapshot-source.md)
-records the verified arm64 archive pockets and keyring for the next build lane.
+records the verified `20261001T000000Z` arm64 archive pockets and keyring used
+by `ubuntu-resolute-snapshot`.
 
 The shim is compiled deterministically from the included source and
 implements the loopback-only workaround documented for Cargo/PRoot by
@@ -151,6 +162,7 @@ Build one target:
 
 ```sh
 python3 scripts/build-image.py debian-trixie --output-dir out/debian-trixie
+python3 scripts/build-image.py ubuntu-resolute-snapshot --output-dir out/ubuntu-resolute-snapshot
 python3 scripts/build-image.py v4-control --output-dir out/v4-control
 ```
 
@@ -158,6 +170,7 @@ Prove two independent materializations are byte-identical:
 
 ```sh
 scripts/verify-reproducible.sh debian-trixie
+scripts/verify-reproducible.sh ubuntu-resolute-snapshot
 scripts/verify-reproducible.sh v4-control
 ```
 
