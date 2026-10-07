@@ -71,6 +71,7 @@
       "builder": {
         "registry": "https://registry-1.docker.io",
         "repository": "library/debian",
+        "distribution": "debian",
         "imageDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
         "mmdebstrapPackage": "mmdebstrap",
         "mmdebstrapVersion": "1.5.7-1+deb13u1"
@@ -86,6 +87,69 @@
       ],
       "archiveRoot": "liskov-debian-trixie-snapshot-aarch64",
       "outputStem": "liskov-runtime-image-debian-trixie-snapshot-aarch64",
+      "supportStatus": "release-candidate"
+    },
+    "ubuntu-resolute-snapshot": {
+      "kind": "apt-snapshot",
+      "distribution": "ubuntu",
+      "release": "resolute",
+      "architecture": "arm64",
+      "suite": "resolute",
+      "components": [
+        "main"
+      ],
+      "variant": "apt",
+      "include": [
+        "ca-certificates",
+        "curl"
+      ],
+      "pockets": [
+        {
+          "suite": "resolute",
+          "archiveUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/",
+          "inReleaseUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/dists/resolute/InRelease",
+          "inReleaseSha256": "45f95ce276cdba3e41870516a130e03c58b8b7a79e9546b0efe9e526d255740c"
+        },
+        {
+          "suite": "resolute-updates",
+          "archiveUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/",
+          "inReleaseUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/dists/resolute-updates/InRelease",
+          "inReleaseSha256": "802e675dd9de4c7f3916434a95e7c1d8eec0e82886622d7805ab19a2c6fe0365"
+        },
+        {
+          "suite": "resolute-security",
+          "archiveUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/",
+          "inReleaseUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/dists/resolute-security/InRelease",
+          "inReleaseSha256": "1d5041572116a8b23aabf79ac7439ad8af83d57ad3fb0f9aa0d4523ec10c5908"
+        }
+      ],
+      "foreignKeyring": {
+        "package": "ubuntu-keyring",
+        "version": "2023.11.28.1build1",
+        "packageUrl": "https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/pool/main/u/ubuntu-keyring/ubuntu-keyring_2023.11.28.1build1_all.deb",
+        "packageSha256": "c377ccf26964f4c206c05c0bc7adb708e031beb919bb9a0ff63af983d064cd66",
+        "member": "usr/share/keyrings/ubuntu-archive-keyring.gpg",
+        "sha256": "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31"
+      },
+      "builder": {
+        "registry": "https://registry-1.docker.io",
+        "repository": "library/debian",
+        "distribution": "debian",
+        "imageDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
+        "mmdebstrapPackage": "mmdebstrap",
+        "mmdebstrapVersion": "1.5.7-1+deb13u1"
+      },
+      "fixups": {
+        "etc/hostname": "localhost\n",
+        "etc/hosts": "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n",
+        "etc/resolv.conf": "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
+      },
+      "removals": [
+        "var/cache/apt/pkgcache.bin",
+        "var/cache/apt/srcpkgcache.bin"
+      ],
+      "archiveRoot": "liskov-ubuntu-resolute-snapshot-aarch64",
+      "outputStem": "liskov-runtime-image-ubuntu-resolute-snapshot-aarch64",
       "supportStatus": "release-candidate"
     }
   }

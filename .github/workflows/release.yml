@@ -114,6 +114,7 @@ jobs:
             echo "Digest-pinned AArch64 rootfs images for Liskov-managed Acurast Cargo/PRoot workloads."
             echo
             echo "- \`debian-trixie-snapshot\` is the Liskov-authored snapshot-lane ${snapshot_status} (ADR-0171)."
+            echo "- \`ubuntu-resolute-snapshot\` is a Liskov-authored Ubuntu 26.04 candidate from pinned snapshot pockets. It is not the maintained default and is not the catalogue name \`ubuntu-resolute\`."
             echo "- \`debian-trixie\` is the OCI-derived A/B control."
             echo "- \`v4-control\` is retained only as the Termux v4.30.1/Acurast compatibility control."
             echo "- Images do not embed the runtime-contact helper; Liskov supplies an independently verified helper in each generated launch bundle."
