@@ -71,6 +71,7 @@
       "builder": {
         "registry": "https://registry-1.docker.io",
         "repository": "library/debian",
+        "distribution": "debian",
         "imageDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
         "mmdebstrapPackage": "mmdebstrap",
         "mmdebstrapVersion": "1.5.7-1+deb13u1"
@@ -133,6 +134,7 @@
       "builder": {
         "registry": "https://registry-1.docker.io",
         "repository": "library/debian",
+        "distribution": "debian",
         "imageDigest": "sha256:8b5033c95ca60cdffb0e0f4c446e5f714e82d8960a9ef4153c0eaf13e988b0ea",
         "mmdebstrapPackage": "mmdebstrap",
         "mmdebstrapVersion": "1.5.7-1+deb13u1"

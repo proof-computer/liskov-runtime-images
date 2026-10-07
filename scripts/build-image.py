@@ -888,6 +888,15 @@ def stage_multi_pocket_inputs(
     return pockets, spec, materials
 
 
+def builder_tool_uri(builder: dict[str, Any]) -> str:
+    """Identify mmdebstrap by the builder image's distribution, not the target's."""
+
+    return (
+        f"pkg:deb/{builder['distribution']}/"
+        f"{builder['mmdebstrapPackage']}@{builder['mmdebstrapVersion']}"
+    )
+
+
 def materialize_multi_pocket_snapshot(
     image: dict[str, Any], root: Path, cache_dir: Path, work: Path
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
@@ -968,10 +977,7 @@ def materialize_multi_pocket_snapshot(
                 "role": "builder-image",
             },
             {
-                "uri": (
-                    f"pkg:deb/{image['distribution']}/"
-                    f"{builder['mmdebstrapPackage']}@{builder['mmdebstrapVersion']}"
-                ),
+                "uri": builder_tool_uri(builder),
                 "role": "builder-tool",
             },
             {
@@ -1110,7 +1116,7 @@ def materialize_apt_snapshot(
             "role": "builder-image",
         },
         {
-            "uri": f"pkg:deb/{image['distribution']}/{builder['mmdebstrapPackage']}@{builder['mmdebstrapVersion']}",
+            "uri": builder_tool_uri(builder),
             "role": "builder-tool",
         },
         {

@@ -153,6 +153,11 @@ class SourceLockTests(unittest.TestCase):
             image["builder"]["imageDigest"],
             lock["images"]["debian-trixie-snapshot"]["builder"]["imageDigest"],
         )
+        self.assertEqual(image["builder"]["distribution"], "debian")
+        self.assertEqual(
+            lock["images"]["debian-trixie-snapshot"]["builder"]["distribution"],
+            "debian",
+        )
 
     def test_overlay_includes_owned_getifaddrs_source_and_library(self) -> None:
         self.assertEqual(
@@ -1021,6 +1026,7 @@ class AptSnapshotPocketTests(unittest.TestCase):
             "include": ["ca-certificates", "curl"],
             "builder": {
                 "repository": "library/debian",
+                "distribution": "debian",
                 "imageDigest": "sha256:" + ("ab" * 32),
                 "mmdebstrapPackage": "mmdebstrap",
                 "mmdebstrapVersion": "1.5.7-1+deb13u1",
@@ -1198,6 +1204,33 @@ class AptSnapshotPocketTests(unittest.TestCase):
         self.assertEqual(roles.count("archive-keyring"), 1)
         self.assertIn("archive-keyring-package", roles)
         self.assertNotIn("pockets", json.loads((REPOSITORY_ROOT / "sources.lock.json").read_bytes()))
+
+    def test_builder_tool_uri_uses_the_builder_distribution(self) -> None:
+        image, files = self._fixture()
+        self.assertEqual(image["distribution"], "ubuntu")
+        with tempfile.TemporaryDirectory() as temporary:
+            root_dir = Path(temporary)
+            work = root_dir / "work"
+            work.mkdir()
+            cache = root_dir / "cache"
+            cache.mkdir()
+            empty = root_dir / "empty.tar"
+            with tarfile.open(empty, "w"):
+                pass
+            runner = root_dir / "runner.sh"
+            runner.write_text(f"#!/bin/sh\ncat {empty}\n", encoding="utf-8")
+            runner.chmod(0o755)
+            with (
+                patch.object(build_image, "download", side_effect=self._fetch(files)),
+                patch.dict(os.environ, {"LISKOV_APT_SNAPSHOT_RUNNER": str(runner)}),
+            ):
+                materials, _omitted, _recipe = build_image.materialize_apt_snapshot(
+                    image, work / "rootfs", cache, work
+                )
+        self.assertEqual(
+            [item["uri"] for item in materials if item["role"] == "builder-tool"],
+            ["pkg:deb/debian/mmdebstrap@1.5.7-1+deb13u1"],
+        )
 
     def test_bad_digest_bad_signature_and_missing_index_fail_closed(self) -> None:
         image, files = self._fixture()
