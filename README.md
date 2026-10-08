@@ -238,6 +238,57 @@ source commit, and every attestation, then publishes those files unchanged.
 Missing, expired, incomplete, additional, mismatched, or unattested files fail
 closed. Release publication contains no construction or QEMU/PRoot job.
 
+New `BUILD-MANIFEST.json` emission uses schema 2. The repository release tag
+is the **bundle** identity. The `catalogue` records independently bind
+`debian-trixie-snapshot` to the name `debian-trixie`, and
+`ubuntu-resolute-snapshot` to `ubuntu-resolute`. The OCI `debian-trixie` and
+`v4-control` targets remain diagnostic controls and carry no catalogue version.
+A record includes its numeric `MAJOR.MINOR.PATCH`, exact archive SHA-256 and
+complete target file set. The manifest's shared `source` and `workflow`
+coordinates bind every record to the attested source commit, signer workflow
+ref, run ID and run attempt. Attestation verification remains mandatory before
+trusting these declarations. A bundle record does not register or promote a
+customer catalogue name; registration belongs to the control plane.
+
+Schema-2 release intent retains the existing `version`, `targets` and
+`materialInputFingerprint` fields and adds an explicit `catalogue` list:
+
+```json
+{
+  "target": "debian-trixie-snapshot",
+  "name": "debian-trixie",
+  "version": "0.1.0",
+  "archiveSha256": "<exact candidate archive SHA-256>",
+  "previousReleases": [],
+  "versionDecision": null
+}
+```
+
+Include exactly one record for each snapshot target, initially `0.1.0` for
+both names. For a subsequent candidate, copy the complete prior identity
+history from verified, attested schema-2 bundles into `previousReleases` as
+`{"version":"0.1.0","archiveSha256":"<verified digest>"}` records. This is
+input evidence, not a catalogue database or an automatic discovery of published
+releases: callers must provide the verified history. The validator refuses a
+known name/version with different bytes, backwards versions and skipped patch
+increments. An unchanged name/version may be carried forward only with its
+identical digest; a rebuild advances that name's patch by one independently
+of the other name. A new major/minor requires a recorded `versionDecision`
+such as `ADR-0200`, backed by the referenced decision. Distro names remain
+immutable. Neither prereleases nor build metadata nor shortened numeric
+versions are catalogue versions.
+
+The existing `build-manifest.py create` and `validate` commands load this map
+from the supplied `--root`'s release intent, compare the exact archive digests,
+and reject missing, duplicate or additional names. They work with local fixture
+files as well as qualified images; `tests/test_ci_contract.py` exercises that
+CLI without a release. New emission requires schema-2 intent. The current
+`release-intent.json` stays unchanged in this schema change; the separate exact
+candidate packet will supply schema-2 intent and known candidate digests.
+Validation retains the strict schema-1 reader, including historical bundles
+from before the Ubuntu target, without assigning catalogue meanings to their
+bundle versions or rewriting their keys or assets.
+
 Successful local and CI smoke tests are necessary but not sufficient for
 support. A release candidate becomes the maintained default only after a
 bounded Acurast A/B canary: a control image and the candidate on the same
