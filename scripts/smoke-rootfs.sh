@@ -17,6 +17,14 @@ for tool in proot python3 tar file readelf curl sha256sum; do
   }
 done
 
+# Acurast bundles Termux PRoot v5.1.107.72. Older distribution PRoot cannot
+# translate statx, so a Rust coreutils image would fail for the wrong reason.
+proot_version=$(proot --version)
+if [[ "${proot_version}" != *v5.1.107.72* ]]; then
+  echo "smoke-rootfs requires Termux PRoot v5.1.107.72; build it with scripts/build-termux-proot.sh" >&2
+  exit 2
+fi
+
 qemu_args=()
 case "$(uname -m)" in
   aarch64 | arm64) ;;
