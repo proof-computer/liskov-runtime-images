@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -135,12 +136,26 @@ def validate_release_intent(
         "materialInputFingerprint",
         "targets",
     }
+    schema = intent.get("schemaVersion")
+    if type(schema) is not int or schema not in (1, 2):
+        raise ClassificationError("release-intent schemaVersion must be 1 or 2")
+    if schema == 2:
+        expected_keys.add("catalogue")
     if set(intent) != expected_keys:
         raise ClassificationError(
             f"{RELEASE_INTENT_PATH} keys must be exactly {sorted(expected_keys)}"
         )
-    if intent["schemaVersion"] != 1:
-        raise ClassificationError("release-intent schemaVersion must be 1")
+    if schema == 2:
+        spec = importlib.util.spec_from_file_location(
+            "build_manifest", REPOSITORY_ROOT / "scripts/build-manifest.py",
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        try:
+            module.validate_catalogue(intent["catalogue"])
+        except module.ManifestError as error:
+            raise ClassificationError(str(error)) from error
     version = intent["version"]
     if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
         raise ClassificationError("release-intent version must be a v-prefixed SemVer")

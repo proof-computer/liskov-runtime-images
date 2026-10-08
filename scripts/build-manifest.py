@@ -25,6 +25,14 @@ SUFFIXES = (
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+MAINTAINED_NAMES = {
+    "debian-trixie-snapshot": "debian-trixie",
+    "ubuntu-resolute-snapshot": "ubuntu-resolute",
+}
+IMAGE_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
+)
+HISTORICAL_TARGETS = TARGETS[:3]
 
 
 class ManifestError(RuntimeError):
@@ -43,11 +51,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def target_stems(root: Path = REPOSITORY_ROOT) -> dict[str, str]:
+def target_stems(
+    root: Path = REPOSITORY_ROOT, targets: tuple[str, ...] = TARGETS,
+) -> dict[str, str]:
     try:
         lock = json.loads((root / "sources.lock.json").read_bytes())
         images = lock["images"]
-        stems = {target: images[target]["outputStem"] for target in TARGETS}
+        stems = {target: images[target]["outputStem"] for target in targets}
     except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise ManifestError("sources.lock.json does not declare every release target") from error
     if not all(isinstance(stem, str) and stem for stem in stems.values()):
@@ -55,12 +65,107 @@ def target_stems(root: Path = REPOSITORY_ROOT) -> dict[str, str]:
     return stems
 
 
-def expected_payloads(root: Path = REPOSITORY_ROOT) -> dict[str, tuple[str, ...]]:
-    stems = target_stems(root)
+def expected_payloads(
+    root: Path = REPOSITORY_ROOT, targets: tuple[str, ...] = TARGETS,
+) -> dict[str, tuple[str, ...]]:
+    stems = target_stems(root, targets)
     return {
         target: tuple(f"{stems[target]}{suffix}" for suffix in SUFFIXES)
-        for target in TARGETS
+        for target in targets
     }
+
+
+def image_version(value: object) -> tuple[int, int, int]:
+    if not isinstance(value, str) or IMAGE_VERSION_PATTERN.fullmatch(value) is None:
+        raise ManifestError("catalogue version must be a numeric MAJOR.MINOR.PATCH triple")
+    return tuple(int(part) for part in value.split("."))
+
+
+def validate_catalogue(value: object) -> list[dict[str, object]]:
+    """Validate declared identities; history must come from verified prior releases."""
+    if not isinstance(value, list) or len(value) != len(MAINTAINED_NAMES):
+        raise ManifestError("catalogue must version every maintained target exactly once")
+    records: dict[str, dict[str, object]] = {}
+    for entry in value:
+        record = require_object(
+            entry, "catalogue record",
+            {"target", "name", "version", "archiveSha256", "previousReleases", "versionDecision"},
+        )
+        target = record["target"]
+        if (
+            not isinstance(target, str)
+            or target not in MAINTAINED_NAMES
+            or target in records
+        ):
+            raise ManifestError("catalogue target is a control, unknown, or duplicated")
+        if record["name"] != MAINTAINED_NAMES[target]:
+            raise ManifestError("catalogue name does not match its immutable distro target")
+        current = image_version(record["version"])
+        digest = record["archiveSha256"]
+        if not isinstance(digest, str) or SHA256_PATTERN.fullmatch(digest) is None:
+            raise ManifestError("catalogue archiveSha256 must be a lowercase SHA-256")
+        history = record["previousReleases"]
+        if not isinstance(history, list):
+            raise ManifestError("previousReleases must be a list of verified release identities")
+        prior: dict[tuple[int, int, int], str] = {}
+        for old_value in history:
+            old = require_object(
+                old_value, "previous release", {"version", "archiveSha256"},
+            )
+            old_version = image_version(old["version"])
+            old_digest = old["archiveSha256"]
+            if not isinstance(old_digest, str) or SHA256_PATTERN.fullmatch(old_digest) is None:
+                raise ManifestError("previous release archiveSha256 must be a lowercase SHA-256")
+            if old_version in prior:
+                raise ManifestError("previous release versions must be unique")
+            prior[old_version] = old_digest
+        decision = record["versionDecision"]
+        if decision is not None and (
+            not isinstance(decision, str) or re.fullmatch(r"ADR-[0-9]{4,}", decision) is None
+        ):
+            raise ManifestError("versionDecision must be null or an explicit ADR identifier")
+        if current in prior and prior[current] != digest:
+            raise ManifestError("immutable name/version cannot be reused for different bytes")
+        if not prior:
+            if current != (0, 1, 0) or decision is not None:
+                raise ManifestError("the initial catalogue version must be 0.1.0")
+        else:
+            latest = max(prior)
+            if current == latest and prior[current] == digest:
+                if decision is not None:
+                    raise ManifestError("unchanged identity requires no version decision")
+            elif current <= latest:
+                raise ManifestError("catalogue version must not move backwards")
+            elif current[:2] == latest[:2]:
+                if current[2] != latest[2] + 1 or decision is not None:
+                    raise ManifestError("a rebuild must advance only the patch by one")
+            elif decision is None:
+                raise ManifestError("a new major/minor requires an explicit version decision")
+        records[target] = record
+    return [records[target] for target in MAINTAINED_NAMES]
+
+
+def catalogue_from_intent(root: Path) -> list[dict[str, object]]:
+    try:
+        intent = json.loads((root / "release-intent.json").read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ManifestError("schema-2 release intent with explicit catalogue versions is required") from error
+    if (
+        not isinstance(intent, dict)
+        or type(intent.get("schemaVersion")) is not int
+        or intent["schemaVersion"] != 2
+    ):
+        raise ManifestError("new manifests require a schema-2 release intent")
+    return validate_catalogue(intent.get("catalogue"))
+
+
+def catalogue_records(
+    catalogue: object, expected: dict[str, tuple[str, ...]],
+) -> list[dict[str, object]]:
+    return [
+        dict(record, files=list(expected[record["target"]]))
+        for record in validate_catalogue(catalogue)
+    ]
 
 
 def regular_files(bundle_dir: Path) -> set[str]:
@@ -120,6 +225,7 @@ def create_manifest(
     run_id: str,
     run_attempt: str,
     root: Path = REPOSITORY_ROOT,
+    catalogue: object = None,
 ) -> dict[str, object]:
     validate_metadata(
         repository=repository,
@@ -131,13 +237,21 @@ def create_manifest(
         run_id=run_id,
         run_attempt=run_attempt,
     )
+    declared_catalogue = (
+        catalogue_from_intent(root) if catalogue is None else validate_catalogue(catalogue)
+    )
     expected = expected_payloads(root)
+    named_records = catalogue_records(declared_catalogue, expected)
     payload_names = {name for names in expected.values() for name in names}
     actual = regular_files(bundle_dir)
     if actual != payload_names:
         raise ManifestError(
             f"release payload set mismatch: expected {sorted(payload_names)}, got {sorted(actual)}"
         )
+    for record in named_records:
+        archive = bundle_dir / expected[record["target"]][0]
+        if not archive.is_file() or record["archiveSha256"] != sha256_file(archive):
+            raise ManifestError("catalogue version/archive digest mismatch")
     files: list[dict[str, object]] = []
     target_records: list[dict[str, object]] = []
     for target in TARGETS:
@@ -154,7 +268,8 @@ def create_manifest(
                 }
             )
     manifest: dict[str, object] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "catalogue": named_records,
         "release": {"version": version},
         "source": {
             "repository": repository,
@@ -196,8 +311,34 @@ def validate_manifest(
     workflow_path: str,
     run_id: str,
     root: Path = REPOSITORY_ROOT,
+    catalogue: object = None,
 ) -> dict[str, object]:
-    expected = expected_payloads(root)
+    try:
+        manifest_value = json.loads((bundle_dir / MANIFEST_NAME).read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ManifestError("BUILD-MANIFEST.json is missing or malformed") from error
+    if (
+        not isinstance(manifest_value, dict)
+        or type(manifest_value.get("schemaVersion")) is not int
+    ):
+        raise ManifestError("unsupported BUILD-MANIFEST schemaVersion")
+    schema = manifest_value["schemaVersion"]
+    if schema not in (1, 2):
+        raise ManifestError("unsupported BUILD-MANIFEST schemaVersion")
+    keys = {"schemaVersion", "release", "source", "workflow", "targets", "files"}
+    manifest = require_object(
+        manifest_value, "manifest", keys | ({"catalogue"} if schema == 2 else set()),
+    )
+    targets = TARGETS
+    if schema == 1:
+        historical_expected = expected_payloads(root, HISTORICAL_TARGETS)
+        historical_records = [
+            {"name": target, "files": list(historical_expected[target])}
+            for target in HISTORICAL_TARGETS
+        ]
+        if manifest["targets"] == historical_records:
+            targets = HISTORICAL_TARGETS
+    expected = expected_payloads(root, targets)
     payload_names = {name for names in expected.values() for name in names}
     final_names = payload_names | {MANIFEST_NAME, CHECKSUMS_NAME}
     actual_names = regular_files(bundle_dir)
@@ -205,17 +346,16 @@ def validate_manifest(
         raise ManifestError(
             f"bundle file set mismatch: expected {sorted(final_names)}, got {sorted(actual_names)}"
         )
-    try:
-        manifest_value = json.loads((bundle_dir / MANIFEST_NAME).read_bytes())
-    except json.JSONDecodeError as error:
-        raise ManifestError("BUILD-MANIFEST.json is malformed") from error
-    manifest = require_object(
-        manifest_value,
-        "manifest",
-        {"schemaVersion", "release", "source", "workflow", "targets", "files"},
-    )
-    if manifest["schemaVersion"] != 1:
-        raise ManifestError("unsupported BUILD-MANIFEST schemaVersion")
+    if schema == 2:
+        declared_catalogue = (
+            catalogue_from_intent(root) if catalogue is None else validate_catalogue(catalogue)
+        )
+        if manifest["catalogue"] != catalogue_records(declared_catalogue, expected):
+            raise ManifestError("catalogue name/version/archive binding mismatch")
+        for record in declared_catalogue:
+            archive = bundle_dir / expected[record["target"]][0]
+            if record["archiveSha256"] != sha256_file(archive):
+                raise ManifestError("catalogue version/archive digest mismatch")
     release = require_object(manifest["release"], "release", {"version"})
     source = require_object(
         manifest["source"],
@@ -239,7 +379,7 @@ def validate_manifest(
         raise ManifestError("signer workflow mismatch")
     if workflow["runId"] != positive_integer(run_id, "expected workflow run id"):
         raise ManifestError("workflow run mismatch")
-    if not isinstance(workflow["runAttempt"], int) or workflow["runAttempt"] <= 0:
+    if type(workflow["runAttempt"]) is not int or workflow["runAttempt"] <= 0:
         raise ManifestError("workflow runAttempt must be a positive integer")
     expected_ref_prefix = f"{repository}/{workflow_path}@"
     if not isinstance(workflow["ref"], str) or not workflow["ref"].startswith(
@@ -248,7 +388,7 @@ def validate_manifest(
         raise ManifestError("workflow ref mismatch")
 
     expected_targets = [
-        {"name": target, "files": list(expected[target])} for target in TARGETS
+        {"name": target, "files": list(expected[target])} for target in targets
     ]
     if manifest["targets"] != expected_targets:
         raise ManifestError("release target set is missing, additional, or incomplete")
@@ -266,10 +406,10 @@ def validate_manifest(
         target = record["target"]
         if not isinstance(name, str) or name in seen:
             raise ManifestError("manifest file names must be unique strings")
-        if target not in TARGETS or name not in expected[target]:
+        if not isinstance(target, str) or target not in targets or name not in expected[target]:
             raise ManifestError(f"manifest file {name!r} is not valid for target {target!r}")
         path = bundle_dir / name
-        if record["byteSize"] != path.stat().st_size:
+        if type(record["byteSize"]) is not int or record["byteSize"] != path.stat().st_size:
             raise ManifestError(f"byte size mismatch for {name}")
         digest = record["sha256"]
         if not isinstance(digest, str) or SHA256_PATTERN.fullmatch(digest) is None:

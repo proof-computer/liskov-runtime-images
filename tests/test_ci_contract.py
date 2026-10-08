@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -141,6 +143,21 @@ class ChangeClassifierTests(unittest.TestCase):
         with self.assertRaises(classifier.ClassificationError):
             classifier.validate_release_intent(self.root)
 
+    def test_schema_two_release_intent_validates_explicit_catalogue(self):
+        catalogue = [{"target": target, "name": name, "version": "0.1.0",
+                      "archiveSha256": "c" * 64, "previousReleases": [], "versionDecision": None}
+                     for target, name in build_manifest.MAINTAINED_NAMES.items()]
+        intent = {"schemaVersion": 2, "version": "v0.2.0", "catalogue": catalogue,
+                  "materialInputFingerprint": classifier.material_fingerprint(self.root),
+                  "targets": list(classifier.TARGETS)}
+        path = self.root / classifier.RELEASE_INTENT_PATH
+        path.write_text(json.dumps(intent), encoding="utf-8")
+        self.assertEqual(classifier.classify_paths([classifier.RELEASE_INTENT_PATH], self.root)["mode"], "release")
+        intent["catalogue"] = catalogue[:-1]
+        path.write_text(json.dumps(intent), encoding="utf-8")
+        with self.assertRaises(classifier.ClassificationError):
+            classifier.validate_release_intent(self.root)
+
 
 class BuildManifestTests(unittest.TestCase):
     repository = "proof-computer/liskov-runtime-images"
@@ -175,6 +192,14 @@ class BuildManifestTests(unittest.TestCase):
         for names in build_manifest.expected_payloads(self.root).values():
             for name in names:
                 (self.bundle / name).write_bytes(f"payload:{name}".encode())
+        self.catalogue = [
+            {
+                "target": target, "name": name, "version": "0.1.0",
+                "archiveSha256": build_manifest.sha256_file(self.bundle / build_manifest.expected_payloads(self.root)[target][0]),
+                "previousReleases": [], "versionDecision": None,
+            }
+            for target, name in build_manifest.MAINTAINED_NAMES.items()
+        ]
         build_manifest.create_manifest(
             self.bundle,
             repository=self.repository,
@@ -186,6 +211,7 @@ class BuildManifestTests(unittest.TestCase):
             run_id=self.run_id,
             run_attempt="2",
             root=self.root,
+            catalogue=self.catalogue,
         )
 
     def tearDown(self) -> None:
@@ -200,6 +226,7 @@ class BuildManifestTests(unittest.TestCase):
             "workflow_path": self.workflow_path,
             "run_id": self.run_id,
             "root": self.root,
+            "catalogue": self.catalogue,
         }
         arguments.update(overrides)
         return build_manifest.validate_manifest(bundle or self.bundle, **arguments)
@@ -265,6 +292,132 @@ class BuildManifestTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaises(build_manifest.ManifestError):
             self.validate(malformed)
+
+    def rewrite_manifest(self, bundle, manifest):
+        (bundle / build_manifest.MANIFEST_NAME).write_bytes(build_manifest.canonical_json(manifest))
+        self.refresh_checksums(bundle)
+
+    def refresh_checksums(self, bundle):
+        names = sorted(build_manifest.regular_files(bundle) - {build_manifest.CHECKSUMS_NAME})
+        (bundle / build_manifest.CHECKSUMS_NAME).write_text(
+            "".join(f"{build_manifest.sha256_file(bundle / name)}  {name}\n" for name in names),
+            encoding="utf-8",
+        )
+
+    def test_schema_two_binds_independent_named_versions_and_controls(self):
+        manifest = self.validate()
+        self.assertEqual(manifest["schemaVersion"], 2)
+        self.assertEqual([entry["name"] for entry in manifest["catalogue"]], ["debian-trixie", "ubuntu-resolute"])
+        self.assertEqual([entry["version"] for entry in manifest["catalogue"]], ["0.1.0", "0.1.0"])
+        for entry in manifest["catalogue"]:
+            self.assertEqual(entry["files"], list(build_manifest.expected_payloads(self.root)[entry["target"]]))
+        self.assertNotIn("catalogue", manifest["targets"][0])
+        self.assertEqual(manifest["workflow"]["ref"], self.workflow_ref)
+        self.assertEqual(manifest["workflow"]["runAttempt"], 2)
+        self.assertEqual(build_manifest.sha256_file(self.bundle / build_manifest.MANIFEST_NAME), "507e1cab97d65afb705c9dbec008b0f619b7e5cd952051602b4fd41f4a9d2fc5")
+
+    def test_rejects_modified_catalogue_even_with_refreshed_checksums(self):
+        for field, value in (("version", "0.1.1"), ("archiveSha256", "0" * 64), ("name", "ubuntu-resolute")):
+            with self.subTest(field=field):
+                bundle = self.clone_bundle(f"changed-{field}")
+                manifest = json.loads((bundle / build_manifest.MANIFEST_NAME).read_bytes())
+                manifest["catalogue"][0][field] = value
+                self.rewrite_manifest(bundle, manifest)
+                with self.assertRaises(build_manifest.ManifestError):
+                    self.validate(bundle)
+        bundle = self.clone_bundle("changed-byte")
+        manifest = json.loads((bundle / build_manifest.MANIFEST_NAME).read_bytes())
+        archive = manifest["catalogue"][0]["files"][0]
+        (bundle / archive).write_bytes((bundle / archive).read_bytes() + b"!")
+        for file in manifest["files"]:
+            if file["name"] == archive:
+                file["byteSize"] += 1
+                file["sha256"] = build_manifest.sha256_file(bundle / archive)
+        self.rewrite_manifest(bundle, manifest)
+        with self.assertRaisesRegex(build_manifest.ManifestError, "digest mismatch"):
+            self.validate(bundle)
+
+    def test_map_rejects_controls_duplicates_missing_and_non_numeric_versions(self):
+        cases = [[], self.catalogue[:-1], [self.catalogue[0], self.catalogue[0]]]
+        for target in ("v4-control", "debian-trixie", "other", []):
+            bad = copy.deepcopy(self.catalogue)
+            bad[0]["target"] = target
+            cases.append(bad)
+        for version in ("v0.1.0", "0.1", "01.1.0", "0.1.0-rc.1", "0.1.0+build", 0, None):
+            bad = copy.deepcopy(self.catalogue)
+            bad[0]["version"] = version
+            cases.append(bad)
+        for bad in cases:
+            with self.subTest(catalogue=bad):
+                with self.assertRaises(build_manifest.ManifestError):
+                    build_manifest.validate_catalogue(bad)
+
+    def test_immutable_identity_and_independent_patch_progression(self):
+        candidate = copy.deepcopy(self.catalogue)
+        old_digest = candidate[0]["archiveSha256"]
+        candidate[0]["previousReleases"] = [{"version": "0.1.0", "archiveSha256": old_digest}]
+        build_manifest.validate_catalogue(candidate)  # unchanged identity/bytes can be carried forward
+        candidate[0]["archiveSha256"] = "c" * 64
+        with self.assertRaisesRegex(build_manifest.ManifestError, "immutable"):
+            build_manifest.validate_catalogue(candidate)
+        candidate[0]["version"] = "0.1.1"
+        validated = build_manifest.validate_catalogue(candidate)
+        self.assertEqual(validated[1]["version"], "0.1.0")
+        candidate[0]["version"] = "0.1.2"
+        with self.assertRaisesRegex(build_manifest.ManifestError, "patch by one"):
+            build_manifest.validate_catalogue(candidate)
+        candidate[0]["version"] = "0.2.0"
+        with self.assertRaisesRegex(build_manifest.ManifestError, "explicit version decision"):
+            build_manifest.validate_catalogue(candidate)
+        candidate[0]["versionDecision"] = "ADR-0200"
+        build_manifest.validate_catalogue(candidate)
+        candidate[0]["version"] = "0.0.9"
+        with self.assertRaisesRegex(build_manifest.ManifestError, "backwards"):
+            build_manifest.validate_catalogue(candidate)
+
+    def test_schema_one_historical_bundles_keep_exact_keys_and_target_sets(self):
+        for targets in (build_manifest.HISTORICAL_TARGETS, build_manifest.TARGETS):
+            with self.subTest(targets=targets):
+                bundle = self.clone_bundle(f"historical-{len(targets)}")
+                manifest = json.loads((bundle / build_manifest.MANIFEST_NAME).read_bytes())
+                manifest["schemaVersion"] = 1
+                del manifest["catalogue"]
+                manifest["targets"] = [record for record in manifest["targets"] if record["name"] in targets]
+                manifest["files"] = [record for record in manifest["files"] if record["target"] in targets]
+                allowed = {record["name"] for record in manifest["files"]}
+                for path in bundle.iterdir():
+                    if path.name not in allowed | {build_manifest.MANIFEST_NAME, build_manifest.CHECKSUMS_NAME}:
+                        path.unlink()
+                self.rewrite_manifest(bundle, manifest)
+                result = self.validate(bundle, catalogue=None)
+                self.assertEqual(result["schemaVersion"], 1)
+                manifest["catalogue"] = []
+                self.rewrite_manifest(bundle, manifest)
+                with self.assertRaises(build_manifest.ManifestError):
+                    self.validate(bundle)
+
+    def test_cli_creates_and_validates_fixture_without_release(self):
+        import subprocess
+        bundle = Path(self.temporary.name) / "cli-bundle"
+        bundle.mkdir()
+        for names in build_manifest.expected_payloads(self.root).values():
+            for name in names:
+                shutil.copyfile(self.bundle / name, bundle / name)
+        (self.root / "release-intent.json").write_text(json.dumps({
+            "schemaVersion": 2, "catalogue": self.catalogue,
+        }), encoding="utf-8")
+        common = ["--bundle-dir", str(bundle), "--root", str(self.root),
+                  "--repository", self.repository, "--source-commit", self.source_commit,
+                  "--material-fingerprint", self.fingerprint, "--version", self.version,
+                  "--workflow-path", self.workflow_path, "--workflow-run-id", self.run_id]
+        script = str(REPOSITORY_ROOT / "scripts/build-manifest.py")
+        for command in (["create", *common, "--workflow-ref", self.workflow_ref, "--workflow-run-attempt", "2"], ["validate", *common]):
+            result = subprocess.run([sys.executable, script, *command], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["schemaVersion"], 2)
+        (self.root / "release-intent.json").write_text('{"schemaVersion":1}', encoding="utf-8")
+        result = subprocess.run([sys.executable, script, "validate", *common], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
 
 
 class WorkflowContractTests(unittest.TestCase):
