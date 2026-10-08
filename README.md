@@ -214,7 +214,11 @@ Material and release CI then:
   aliases;
 - validates the shim's AArch64 shared-object shape, exported functions,
   loopback-only result, source digest, and provenance binding;
-- boots the exact uploaded artifact under QEMU/PRoot in a separate job;
+- boots the exact uploaded artifact under QEMU/PRoot in a separate job, using
+  the public Termux PRoot `v5.1.107.72` base that Acurast processors bundle,
+  built from its digest-pinned source by `scripts/build-termux-proot.sh`
+  (distribution PRoot 5.1.0 cannot translate `statx`, which Rust coreutils
+  uses for every file lookup);
 - resolves the production Liskov hostname;
 - proves abstract Unix bridge-socket access and fail-closed exit status;
 - downloads one exact released helper as test-only material, verifies its
