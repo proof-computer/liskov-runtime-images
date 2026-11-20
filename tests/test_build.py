@@ -531,8 +531,8 @@ class SnapshotTlsTrustTests(unittest.TestCase):
         self.assertEqual(document["dataLicense"], "CC0-1.0")
         by_id = {package["SPDXID"]: package for package in document["packages"]}
         shim = by_id["SPDXRef-Package-Liskov-Getifaddrs-Override"]
-        self.assertEqual(shim["licenseConcluded"], "FSL-1.1-Apache-2.0")
-        self.assertEqual(shim["licenseDeclared"], "FSL-1.1-Apache-2.0")
+        self.assertEqual(shim["licenseConcluded"], "FSL-1.1-ALv2")
+        self.assertEqual(shim["licenseDeclared"], "FSL-1.1-ALv2")
         rootfs = by_id["SPDXRef-Package-Rootfs"]
         self.assertEqual(rootfs["licenseConcluded"], "NOASSERTION")
         self.assertEqual(rootfs["licenseDeclared"], "NOASSERTION")
