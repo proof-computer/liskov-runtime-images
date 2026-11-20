@@ -99,7 +99,7 @@ Operating-system packages retain their original licenses. See
 
 Repository-authored code, scripts, the shipped `getifaddrs` shim source, and
 documentation are licensed under the Functional Source License, Version 1.1,
-with Apache-2.0 as the future licence (SPDX `FSL-1.1-Apache-2.0`). The text is
+with Apache-2.0 as the future licence (SPDX `FSL-1.1-ALv2`). The text is
 [`LICENSE`](LICENSE).
 
 You may use, copy, modify, create derivative works, publicly perform, publicly

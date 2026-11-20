@@ -1,6 +1,6 @@
 # Third-party materials
 
-The Functional Source License, SPDX identifier `FSL-1.1-Apache-2.0`, applies
+The Functional Source License, SPDX identifier `FSL-1.1-ALv2`, applies
 to this repository's build code, scripts, shim source, and documentation. It
 does not relicense the operating-system packages inside generated rootfs
 images.

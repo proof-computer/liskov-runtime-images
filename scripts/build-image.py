@@ -1364,8 +1364,8 @@ def spdx_document(
                     "checksumValue": getifaddrs_override_sha256,
                 }
             ],
-            "licenseConcluded": "FSL-1.1-Apache-2.0",
-            "licenseDeclared": "FSL-1.1-Apache-2.0",
+            "licenseConcluded": "FSL-1.1-ALv2",
+            "licenseDeclared": "FSL-1.1-ALv2",
             "copyrightText": "Copyright 2026 PROOF Computer",
             "supplier": "Organization: PROOF Computer",
         }

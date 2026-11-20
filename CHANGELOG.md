@@ -6,7 +6,7 @@
   retirement. The next canary is authored as a V5 document on
   `runtime-image.yml@v2`.
 - License repository-authored code, scripts, the shipped `getifaddrs` shim
-  source, and documentation under `FSL-1.1-Apache-2.0`. The image SBOM
+  source, and documentation under `FSL-1.1-ALv2`. The image SBOM
   declares that identifier for the repository-authored shim package. Earlier
   image revisions keep Apache-2.0. Operating-system packages keep their
   upstream licences.
